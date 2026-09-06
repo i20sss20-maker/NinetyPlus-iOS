@@ -32,7 +32,7 @@ struct V2HomeView: View {
             ScrollView {
                 LazyVStack(spacing: 18) {
                     TopBar(title: nil, showsLogo: true)
-                    if !APIFootballClient.hasKey { setupCard } else {
+                    if !APIFootballClient.isConfigured { setupCard } else {
                         liveHero
                         forYouSection
                         todaySection
@@ -190,7 +190,7 @@ struct V2HomeView: View {
     }
 
     @MainActor private func loadFavoriteUpcoming(force: Bool = false) async {
-        guard APIFootballClient.hasKey else { return }
+        guard APIFootballClient.isConfigured else { return }
         let ids = Array(favoriteTeams.prefix(6))
         guard !ids.isEmpty else {
             favoriteUpcoming = []
