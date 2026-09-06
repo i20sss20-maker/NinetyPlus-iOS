@@ -7,7 +7,7 @@ struct RootView: View {
 
     var body: some View {
         TabView(selection: $selection) {
-            APIHomeView()
+            V2HomeView()
                 .tag(0)
                 .tabItem { Label("الرئيسية", systemImage: "house.fill") }
 
