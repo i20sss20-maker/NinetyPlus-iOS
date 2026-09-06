@@ -56,6 +56,22 @@ struct APIPlusStanding: Identifiable, Hashable {
     let form: String?
 }
 
+struct APIPlusScorer: Identifiable, Hashable {
+    let id: String
+    let rank: Int
+    let playerID: String
+    let name: String
+    let photo: String?
+    let nationality: String?
+    let teamID: String?
+    let team: String
+    let teamLogo: String?
+    let appearances: Int
+    let minutes: Int
+    let goals: Int
+    let assists: Int
+}
+
 @MainActor
 final class APISportsStore: ObservableObject {
     static let shared = APISportsStore()
@@ -93,6 +109,28 @@ final class APISportsStore: ObservableObject {
         return envelope.response.map(mapMatch).sorted { priority($0) > priority($1) }
     }
 
+    func leagueFixtures(leagueID: String, count: Int = 20) async throws -> [APIPlusMatch] {
+        let season = String(APIFootballClient.currentSeason)
+        async let recentEnvelope: APIEnvelope<[APIFixture]> = APIFootballClient.get("fixtures", query: [
+            .init(name: "league", value: leagueID),
+            .init(name: "season", value: season),
+            .init(name: "last", value: String(max(5, count / 2))),
+            .init(name: "timezone", value: "Asia/Riyadh")
+        ])
+        async let nextEnvelope: APIEnvelope<[APIFixture]> = APIFootballClient.get("fixtures", query: [
+            .init(name: "league", value: leagueID),
+            .init(name: "season", value: season),
+            .init(name: "next", value: String(max(5, count / 2))),
+            .init(name: "timezone", value: "Asia/Riyadh")
+        ])
+        let (recent, upcoming) = try await (recentEnvelope, nextEnvelope)
+        let combined = recent.response + upcoming.response
+        var seen = Set<String>()
+        return combined.map(mapMatch).filter { seen.insert($0.id).inserted }.sorted {
+            ($0.date ?? .distantPast) > ($1.date ?? .distantPast)
+        }
+    }
+
     func standings(leagueID: String) async throws -> [APIPlusStanding] {
         let envelope: APIEnvelope<[APIStandingLeague]> = try await APIFootballClient.get("standings", query: [
             .init(name: "league", value: leagueID),
@@ -107,6 +145,31 @@ final class APISportsStore: ObservableObject {
                             goalsAgainst: r.all?.goals?.against ?? 0, goalDifference: r.goalsDiff ?? 0,
                             points: r.points ?? 0, form: r.form)
         }.sorted { $0.rank < $1.rank }
+    }
+
+    func topScorers(leagueID: String) async throws -> [APIPlusScorer] {
+        let envelope: APIEnvelope<[APITopScorerItem]> = try await APIFootballClient.get("players/topscorers", query: [
+            .init(name: "league", value: leagueID),
+            .init(name: "season", value: String(APIFootballClient.currentSeason))
+        ])
+        return envelope.response.enumerated().map { index, item in
+            let stat = item.statistics.first
+            return APIPlusScorer(
+                id: "\(leagueID)-\(item.player.id)",
+                rank: index + 1,
+                playerID: String(item.player.id),
+                name: item.player.name ?? "—",
+                photo: item.player.photo,
+                nationality: item.player.nationality,
+                teamID: stat?.team.id.map(String.init),
+                team: stat?.team.name ?? "—",
+                teamLogo: stat?.team.logo,
+                appearances: stat?.games?.appearances ?? 0,
+                minutes: stat?.games?.minutes ?? 0,
+                goals: stat?.goals?.total ?? 0,
+                assists: stat?.goals?.assists ?? 0
+            )
+        }
     }
 
     func searchTeams(_ text: String) async throws -> [APIPlusTeam] {
