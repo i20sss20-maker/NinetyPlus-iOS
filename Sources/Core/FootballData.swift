@@ -145,6 +145,18 @@ enum FootballAPI {
         return response.results ?? response.events ?? []
     }
 
+    static func nextLeagueEvents(leagueID: String) async throws -> [TeamEvent] {
+        let url = URL(string: "\(base)/eventsnextleague.php?id=\(leagueID)")!
+        let response: TeamEventsResponse = try await get(url)
+        return response.events ?? response.results ?? []
+    }
+
+    static func lastLeagueEvents(leagueID: String) async throws -> [TeamEvent] {
+        let url = URL(string: "\(base)/eventspastleague.php?id=\(leagueID)")!
+        let response: TeamEventsResponse = try await get(url)
+        return response.events ?? response.results ?? []
+    }
+
     static func stats(eventID: String) async throws -> [MatchStat] {
         let url = URL(string: "\(base)/lookupeventstats.php?id=\(eventID)")!
         let response: StatsResponse = try await get(url)
@@ -166,7 +178,7 @@ enum FootballAPI {
     private static func get<T: Decodable>(_ url: URL) async throws -> T {
         var request = URLRequest(url: url)
         request.timeoutInterval = 15
-        request.setValue("NinetyPlus/1.2 iOS", forHTTPHeaderField: "User-Agent")
+        request.setValue("NinetyPlus/1.3 iOS", forHTTPHeaderField: "User-Agent")
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             throw URLError(.badServerResponse)
