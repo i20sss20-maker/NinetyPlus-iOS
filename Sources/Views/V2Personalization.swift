@@ -49,9 +49,18 @@ struct V2FavoritesView: View {
         let playerIDs = favoritePlayerIDs.split(separator: ",").map(String.init)
         var loadedTeams: [APIPlusTeam] = []
         var loadedPlayers: [APIPlusPlayer] = []
-        for id in teamIDs { if let team = try? await APISportsStore.shared.team(id: id), let team { loadedTeams.append(team) } }
-        for id in playerIDs { if let player = try? await APISportsStore.shared.player(id: id), let player { loadedPlayers.append(player) } }
-        teams = loadedTeams; players = loadedPlayers
+        for id in teamIDs {
+            if let team = try? await APISportsStore.shared.team(id: id) {
+                loadedTeams.append(team)
+            }
+        }
+        for id in playerIDs {
+            if let player = try? await APISportsStore.shared.player(id: id) {
+                loadedPlayers.append(player)
+            }
+        }
+        teams = loadedTeams
+        players = loadedPlayers
     }
 }
 
