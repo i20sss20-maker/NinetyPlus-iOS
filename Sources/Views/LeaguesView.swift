@@ -115,7 +115,10 @@ struct TeamDetailView: View {
     let teamID: String
     let fallbackName: String
     @State private var team: TeamProfile?
+    @State private var recent: [TeamEvent] = []
+    @State private var upcoming: [TeamEvent] = []
     @State private var loading = true
+    @State private var selectedSection = "نظرة عامة"
     @AppStorage("favoriteTeamIDs") private var favoriteTeamIDs = ""
 
     private var isFavorite: Bool {
@@ -129,7 +132,14 @@ struct TeamDetailView: View {
                     ProgressView("جاري تحميل النادي...").tint(AppTheme.green).padding(.top, 80)
                 } else if let team {
                     hero(team)
-                    info(team)
+                    SegmentBar(items: ["نظرة عامة", "النتائج", "القادمة"], selected: $selectedSection)
+                    switch selectedSection {
+                    case "النتائج": eventList(recent, empty: "لا توجد نتائج حديثة متاحة")
+                    case "القادمة": eventList(upcoming, empty: "لا توجد مباريات قادمة متاحة")
+                    default:
+                        formStrip
+                        info(team)
+                    }
                 } else {
                     ContentUnavailableView("تعذر تحميل النادي", systemImage: "shield.slash")
                 }
@@ -145,10 +155,8 @@ struct TeamDetailView: View {
                 }
             }
         }
-        .task {
-            do { team = try await FootballAPI.team(id: teamID) } catch { team = nil }
-            loading = false
-        }
+        .task { await loadTeam() }
+        .refreshable { await loadTeam() }
     }
 
     private func hero(_ t: TeamProfile) -> some View {
@@ -170,11 +178,41 @@ struct TeamDetailView: View {
         .clipShape(RoundedRectangle(cornerRadius: 22))
     }
 
+    private var formStrip: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("آخر النتائج").font(.headline)
+                Spacer()
+                if !recent.isEmpty { Text("آخر \(min(recent.count, 5))").font(.caption).foregroundStyle(AppTheme.muted) }
+            }
+            if recent.isEmpty {
+                Text("الفورمة غير متاحة من المصدر حاليًا").font(.caption).foregroundStyle(AppTheme.muted)
+            } else {
+                HStack(spacing: 8) {
+                    ForEach(Array(recent.prefix(5))) { event in
+                        Text(formLetter(event))
+                            .font(.caption.bold())
+                            .foregroundStyle(formColor(event) == AppTheme.green ? .black : .white)
+                            .frame(width: 32, height: 32)
+                            .background(formColor(event), in: Circle())
+                    }
+                    Spacer()
+                }
+            }
+        }
+        .padding(16)
+        .background(AppTheme.card, in: RoundedRectangle(cornerRadius: 18))
+    }
+
     private func info(_ t: TeamProfile) -> some View {
         VStack(alignment: .leading, spacing: 14) {
             if let stadium = t.strStadium, !stadium.isEmpty { Label(stadium, systemImage: "sportscourt") }
             if let location = t.strLocation, !location.isEmpty { Label(location, systemImage: "mappin.and.ellipse") }
             if let year = t.intFormedYear, !year.isEmpty { Label("تأسس عام \(year)", systemImage: "calendar") }
+            if let website = t.strWebsite, !website.isEmpty,
+               let url = URL(string: website.hasPrefix("http") ? website : "https://\(website)") {
+                Link(destination: url) { Label("الموقع الرسمي", systemImage: "globe") }.foregroundStyle(AppTheme.green)
+            }
             if let description = t.strDescriptionEN, !description.isEmpty {
                 Divider().overlay(Color.white.opacity(0.1))
                 Text(description).font(.subheadline).foregroundStyle(AppTheme.muted).lineLimit(8)
@@ -183,6 +221,89 @@ struct TeamDetailView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(18)
         .background(AppTheme.card, in: RoundedRectangle(cornerRadius: 18))
+    }
+
+    private func eventList(_ events: [TeamEvent], empty: String) -> some View {
+        VStack(spacing: 10) {
+            if events.isEmpty {
+                ContentUnavailableView(empty, systemImage: "calendar")
+                    .frame(maxWidth: .infinity).padding(.vertical, 45)
+            } else {
+                ForEach(events) { event in eventCard(event) }
+            }
+        }
+    }
+
+    private func eventCard(_ event: TeamEvent) -> some View {
+        VStack(spacing: 10) {
+            HStack {
+                Text(event.strLeague ?? "كرة القدم").font(.caption).foregroundStyle(AppTheme.muted).lineLimit(1)
+                Spacer()
+                Text(eventDate(event)).font(.caption2).foregroundStyle(AppTheme.muted)
+            }
+            HStack(spacing: 12) {
+                eventTeam(event.strHomeTeam ?? "—", event.strHomeTeamBadge)
+                Spacer()
+                VStack(spacing: 3) {
+                    if let home = event.intHomeScore, let away = event.intAwayScore {
+                        Text("\(home) - \(away)").font(.title3.bold())
+                    } else {
+                        Text(String((event.strTime ?? "—").prefix(5))).font(.headline).foregroundStyle(AppTheme.green)
+                    }
+                    if let status = event.strStatus, !status.isEmpty { Text(status).font(.caption2).foregroundStyle(AppTheme.muted) }
+                }
+                Spacer()
+                eventTeam(event.strAwayTeam ?? "—", event.strAwayTeamBadge)
+            }
+        }
+        .padding(14)
+        .background(AppTheme.card, in: RoundedRectangle(cornerRadius: 18))
+    }
+
+    private func eventTeam(_ name: String, _ badge: String?) -> some View {
+        VStack(spacing: 5) {
+            RemoteBadge(url: badge).frame(width: 38, height: 38)
+            Text(name).font(.caption.bold()).lineLimit(2).multilineTextAlignment(.center).frame(maxWidth: 92)
+        }
+    }
+
+    @MainActor private func loadTeam() async {
+        loading = true
+        async let profile = try? FootballAPI.team(id: teamID)
+        async let last = try? FootballAPI.lastEvents(teamID: teamID)
+        async let next = try? FootballAPI.nextEvents(teamID: teamID)
+        let values = await (profile, last, next)
+        team = values.0 ?? nil
+        recent = values.1 ?? []
+        upcoming = values.2 ?? []
+        loading = false
+    }
+
+    private func formLetter(_ event: TeamEvent) -> String {
+        guard let hs = Int(event.intHomeScore ?? ""), let ascore = Int(event.intAwayScore ?? "") else { return "-" }
+        let homeIsTeam = event.strHomeTeam?.localizedCaseInsensitiveContains(team?.strTeam ?? fallbackName) == true
+        let teamScore = homeIsTeam ? hs : ascore
+        let opponent = homeIsTeam ? ascore : hs
+        if teamScore > opponent { return "ف" }
+        if teamScore < opponent { return "خ" }
+        return "ت"
+    }
+
+    private func formColor(_ event: TeamEvent) -> Color {
+        switch formLetter(event) {
+        case "ف": return AppTheme.green
+        case "خ": return Color.red.opacity(0.8)
+        case "ت": return Color.gray.opacity(0.7)
+        default: return AppTheme.soft
+        }
+    }
+
+    private func eventDate(_ event: TeamEvent) -> String {
+        guard let raw = event.dateEvent else { return "" }
+        let input = DateFormatter(); input.locale = Locale(identifier: "en_US_POSIX"); input.dateFormat = "yyyy-MM-dd"
+        guard let date = input.date(from: raw) else { return raw }
+        let output = DateFormatter(); output.locale = Locale(identifier: "ar_SA"); output.dateFormat = "d MMM"
+        return output.string(from: date)
     }
 
     private func toggleFavorite() {
