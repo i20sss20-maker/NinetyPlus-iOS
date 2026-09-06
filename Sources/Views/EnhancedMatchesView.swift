@@ -29,7 +29,7 @@ struct EnhancedMatchesView: View {
     }
 
     private var grouped: [(String, [LiveMatch])] {
-        Dictionary(grouping: filtered, by: \ .league)
+        Dictionary(grouping: filtered, by: \.league)
             .map { ($0.key, $0.value) }
             .sorted { lhs, rhs in
                 let lp = leaguePriority(lhs.0), rp = leaguePriority(rhs.0)
@@ -40,7 +40,7 @@ struct EnhancedMatchesView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                LazyVStack(spacing: 14, pinnedViews: []) {
+                LazyVStack(spacing: 14) {
                     TopBar(title: "المباريات")
                     dateStrip
                     SegmentBar(items: ["الكل", "مباشر", "القادمة", "المنتهية", "متابعة"], selected: $segment)
@@ -71,9 +71,7 @@ struct EnhancedMatchesView: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
                 ForEach(days, id: \.self) { day in
-                    Button {
-                        selectedDate = day
-                    } label: {
+                    Button { selectedDate = day } label: {
                         VStack(spacing: 4) {
                             Text(dayTitle(day)).font(.caption.bold())
                             Text(day.formatted(.dateTime.day())).font(.headline)
@@ -153,9 +151,7 @@ struct EnhancedMatchesView: View {
 
     @MainActor private func loadSelectedDate() async {
         loading = true
-        if Calendar.current.isDateInToday(selectedDate) && !store.matches.isEmpty {
-            matches = store.matches
-        }
+        if Calendar.current.isDateInToday(selectedDate) && !store.matches.isEmpty { matches = store.matches }
         do {
             matches = try await store.matches(on: selectedDate)
             if Calendar.current.isDateInToday(selectedDate) { store.matches = matches }
