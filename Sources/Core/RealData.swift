@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import UserNotifications
 
 struct LiveMatch: Identifiable, Hashable, Codable {
     let id: String
@@ -94,17 +95,46 @@ final class SportsStore: ObservableObject {
             let before = "\(previous.homeScore ?? "-"):\(previous.awayScore ?? "-")"
             let after = "\(match.homeScore ?? "-"):\(match.awayScore ?? "-")"
             if before != after, match.homeScore != nil, match.awayScore != nil {
-                liveAlert = "⚽️ \(match.home) \(match.homeScore ?? "-") - \(match.awayScore ?? "-") \(match.away)"
+                let text = "⚽️ \(match.home) \(match.homeScore ?? "-") - \(match.awayScore ?? "-") \(match.away)"
+                liveAlert = text
+                sendLocalMatchNotification(title: "هدف أو تغير في النتيجة", body: text, matchID: match.id)
                 return
             }
 
             let oldStatus = previous.status.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
             let newStatus = match.status.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            if oldStatus != newStatus, (newStatus.contains("finished") || newStatus == "ft") {
-                liveAlert = "انتهت: \(match.home) \(match.homeScore ?? "-") - \(match.awayScore ?? "-") \(match.away)"
-                return
+            if oldStatus != newStatus {
+                if isKickoffStatus(oldStatus: oldStatus, newStatus: newStatus) {
+                    let text = "بدأت: \(match.home) ضد \(match.away)"
+                    liveAlert = text
+                    sendLocalMatchNotification(title: "بداية المباراة", body: text, matchID: match.id)
+                    return
+                }
+                if newStatus.contains("finished") || newStatus == "ft" {
+                    let text = "انتهت: \(match.home) \(match.homeScore ?? "-") - \(match.awayScore ?? "-") \(match.away)"
+                    liveAlert = text
+                    sendLocalMatchNotification(title: "نهاية المباراة", body: text, matchID: match.id)
+                    return
+                }
             }
         }
+    }
+
+    private func isKickoffStatus(oldStatus: String, newStatus: String) -> Bool {
+        let wasPending = oldStatus.isEmpty || oldStatus.contains("not started") || oldStatus.contains("scheduled") || oldStatus == "ns"
+        let isNowLive = newStatus.contains("live") || newStatus.contains("1h") || newStatus.contains("in progress") || newStatus == "ht" || newStatus == "1"
+        return wasPending && isNowLive
+    }
+
+    private func sendLocalMatchNotification(title: String, body: String, matchID: String) {
+        guard UserDefaults.standard.bool(forKey: "notificationsEnabled") else { return }
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = body
+        content.sound = .default
+        content.userInfo = ["matchID": matchID]
+        let request = UNNotificationRequest(identifier: "ninetyplus.match.\(matchID).\(Date().timeIntervalSince1970)", content: content, trigger: nil)
+        UNUserNotificationCenter.current().add(request)
     }
 
     private func fetchMatches(date: Date) async throws -> [LiveMatch] {
@@ -112,7 +142,7 @@ final class SportsStore: ObservableObject {
         let day = formatter.string(from: date)
         guard let url = URL(string: "https://www.thesportsdb.com/api/v1/json/123/eventsday.php?d=\(day)&s=Soccer") else { return [] }
         var request = URLRequest(url: url); request.timeoutInterval = 15; request.cachePolicy = .reloadIgnoringLocalCacheData
-        request.setValue("NinetyPlus/1.2 iOS", forHTTPHeaderField: "User-Agent")
+        request.setValue("NinetyPlus/1.3 iOS", forHTTPHeaderField: "User-Agent")
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { throw URLError(.badServerResponse) }
         let decoded = try JSONDecoder().decode(EventDayResponse.self, from: data)
@@ -158,7 +188,7 @@ final class SportsStore: ObservableObject {
         guard let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
               let url = URL(string: "https://news.google.com/rss/search?q=\(encoded)&hl=ar&gl=SA&ceid=SA:ar") else { return [] }
         var request = URLRequest(url: url); request.timeoutInterval = 15; request.cachePolicy = .reloadIgnoringLocalCacheData
-        request.setValue("NinetyPlus/1.2 iOS", forHTTPHeaderField: "User-Agent")
+        request.setValue("NinetyPlus/1.3 iOS", forHTTPHeaderField: "User-Agent")
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { throw URLError(.badServerResponse) }
         return Array(RSSParser(data: data).parse().prefix(50))
