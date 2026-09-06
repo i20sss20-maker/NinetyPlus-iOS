@@ -16,6 +16,9 @@ jobs:
       - name: Install XcodeGen
         run: brew install xcodegen
 
+      - name: Install Pillow
+        run: python3 -m pip install --user pillow
+
       - name: Generate 90+ app icon
         run: |
           python3 - <<'PY'
@@ -25,10 +28,15 @@ jobs:
           os.makedirs(os.path.dirname(out), exist_ok=True)
           img=Image.new('RGB',(1024,1024),(4,16,19))
           d=ImageDraw.Draw(img)
+          font_paths=[
+              '/System/Library/Fonts/Supplemental/Arial Bold Italic.ttf',
+              '/System/Library/Fonts/Supplemental/Arial Bold.ttf',
+              '/System/Library/Fonts/SFNS.ttf'
+          ]
           try:
-              f90=ImageFont.truetype('/System/Library/Fonts/Supplemental/Arial Bold Italic.ttf', 360)
-              fp=ImageFont.truetype('/System/Library/Fonts/Supplemental/Arial Bold.ttf', 300)
-          except:
+              f90=ImageFont.truetype(font_paths[0], 360)
+              fp=ImageFont.truetype(font_paths[1], 300)
+          except Exception:
               f90=ImageFont.load_default(); fp=ImageFont.load_default()
           d.rounded_rectangle((40,40,984,984), radius=210, fill=(3,19,22))
           d.text((155,290),'90',font=f90,fill=(245,248,248))
