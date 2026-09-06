@@ -2,6 +2,8 @@ import SwiftUI
 
 struct RootView: View {
     @State private var selection = 0
+    @Environment(\.scenePhase) private var scenePhase
+    @StateObject private var store = SportsStore.shared
 
     var body: some View {
         TabView(selection: $selection) {
@@ -28,5 +30,10 @@ struct RootView: View {
         .tint(AppTheme.green)
         .background(AppTheme.bg.ignoresSafeArea())
         .environment(\.layoutDirection, .rightToLeft)
+        .task { await store.refreshIfStale(maxAge: 90) }
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active else { return }
+            Task { await store.refreshIfStale(maxAge: 90) }
+        }
     }
 }
