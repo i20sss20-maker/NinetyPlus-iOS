@@ -8,7 +8,8 @@ struct RootView: View {
             EnhancedMatchesView().tag(1).tabItem { Label("المباريات", systemImage: "soccerball") }
             NewsView().tag(2).tabItem { Label("الأخبار", systemImage: "newspaper.fill") }
             TransfersView().tag(3).tabItem { Label("الانتقالات", systemImage: "arrow.left.arrow.right") }
-            MoreView().tag(4).tabItem { Label("المزيد", systemImage: "square.grid.2x2.fill") }
+            NavigationStack { PlayerCompareView() }.tag(4).tabItem { Label("مقارنة", systemImage: "person.2.fill") }
+            MoreView().tag(5).tabItem { Label("المزيد", systemImage: "square.grid.2x2.fill") }
         }
         .tint(AppTheme.green)
         .background(AppTheme.bg.ignoresSafeArea())
