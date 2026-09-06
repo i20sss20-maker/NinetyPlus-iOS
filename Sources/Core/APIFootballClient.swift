@@ -1,20 +1,21 @@
 import Foundation
 
 enum APIFootballError: LocalizedError {
-    case missingKey
+    case missingConfiguration
     case badResponse
 
     var errorDescription: String? {
         switch self {
-        case .missingKey: return "مفتاح API-Football غير مضاف"
-        case .badResponse: return "تعذر قراءة استجابة API-Football"
+        case .missingConfiguration: return "مصدر بيانات 90+ غير مهيأ"
+        case .badResponse: return "تعذر قراءة استجابة مصدر بيانات 90+"
         }
     }
 }
 
 enum APIFootballClient {
-    private static let baseURL = URL(string: "https://v3.football.api-sports.io")!
+    private static let providerBaseURL = URL(string: "https://v3.football.api-sports.io")!
     static let keyDefaultsName = "apiFootballKey"
+    static let backendURLDefaultsName = "ninetyPlusBackendURL"
 
     static var currentSeason: Int {
         let comps = Calendar.current.dateComponents([.year, .month], from: Date())
@@ -23,23 +24,41 @@ enum APIFootballClient {
         return month >= 7 ? year : year - 1
     }
 
-    static var hasKey: Bool {
-        !(UserDefaults.standard.string(forKey: keyDefaultsName) ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    static var localKey: String {
+        (UserDefaults.standard.string(forKey: keyDefaultsName) ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    static var backendURL: URL? {
+        if let configured = Bundle.main.object(forInfoDictionaryKey: "NINETYPLUS_BACKEND_URL") as? String,
+           let url = normalizedBackendURL(configured) { return url }
+        return normalizedBackendURL(UserDefaults.standard.string(forKey: backendURLDefaultsName) ?? "")
+    }
+
+    static var hasKey: Bool { !localKey.isEmpty }
+    static var hasBackend: Bool { backendURL != nil }
+    static var isConfigured: Bool { hasBackend || hasKey }
+
     static func get<T: Decodable>(_ path: String, query: [URLQueryItem] = []) async throws -> T {
-        let key = (UserDefaults.standard.string(forKey: keyDefaultsName) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !key.isEmpty else { throw APIFootballError.missingKey }
+        var request: URLRequest
 
-        var components = URLComponents(url: baseURL.appending(path: path), resolvingAgainstBaseURL: false)!
-        if !query.isEmpty { components.queryItems = query }
-        guard let url = components.url else { throw URLError(.badURL) }
+        if let backendURL {
+            var components = URLComponents(url: backendURL.appending(path: "api/football"), resolvingAgainstBaseURL: false)!
+            components.queryItems = [URLQueryItem(name: "path", value: path)] + query
+            guard let url = components.url else { throw URLError(.badURL) }
+            request = URLRequest(url: url)
+        } else {
+            guard !localKey.isEmpty else { throw APIFootballError.missingConfiguration }
+            var components = URLComponents(url: providerBaseURL.appending(path: path), resolvingAgainstBaseURL: false)!
+            if !query.isEmpty { components.queryItems = query }
+            guard let url = components.url else { throw URLError(.badURL) }
+            request = URLRequest(url: url)
+            request.setValue(localKey, forHTTPHeaderField: "x-apisports-key")
+        }
 
-        var request = URLRequest(url: url)
         request.timeoutInterval = 18
-        request.cachePolicy = .reloadIgnoringLocalCacheData
-        request.setValue(key, forHTTPHeaderField: "x-apisports-key")
-        request.setValue("NinetyPlus/1.1 iOS", forHTTPHeaderField: "User-Agent")
+        request.cachePolicy = .useProtocolCachePolicy
+        request.setValue("NinetyPlus/2.0 iOS", forHTTPHeaderField: "User-Agent")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
 
         let (data, response) = try await URLSession.shared.data(for: request)
@@ -47,6 +66,17 @@ enum APIFootballClient {
             throw APIFootballError.badResponse
         }
         return try JSONDecoder().decode(T.self, from: data)
+    }
+
+    private static func normalizedBackendURL(_ raw: String) -> URL? {
+        let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty, var components = URLComponents(string: text),
+              let scheme = components.scheme?.lowercased(), ["https", "http"].contains(scheme),
+              components.host != nil else { return nil }
+        components.path = components.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        guard var url = components.url else { return nil }
+        if !url.absoluteString.hasSuffix("/") { url.append(path: "") }
+        return url
     }
 }
 
