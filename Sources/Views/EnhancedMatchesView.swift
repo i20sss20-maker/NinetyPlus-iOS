@@ -57,7 +57,7 @@ struct EnhancedMatchesView: View {
                             ForEach(grouped, id: \.0) { league, items in
                                 leagueHeader(league, count: items.count)
                                 ForEach(items) { match in
-                                    NavigationLink { MatchDetailView(match: match) } label: { matchCard(match) }
+                                    NavigationLink { MatchCenterView(match: match) } label: { matchCard(match) }
                                         .buttonStyle(.plain)
                                 }
                             }
