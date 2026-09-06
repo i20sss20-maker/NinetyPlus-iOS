@@ -5,6 +5,8 @@ struct V2HomeView: View {
     @StateObject private var content = SportsStore.shared
     @AppStorage("favoriteTeamIDs") private var favoriteTeamIDs = ""
     @AppStorage("favoritePlayerIDs") private var favoritePlayerIDs = ""
+    @State private var favoriteUpcoming: [APIPlusMatch] = []
+    @State private var loadingFavorites = false
 
     private var live: [APIPlusMatch] { api.today.filter { api.isLive($0.status) } }
     private var favoriteTeams: Set<String> { Set(favoriteTeamIDs.split(separator: ",").map(String.init)) }
@@ -16,6 +18,13 @@ struct V2HomeView: View {
             if let awayID = match.awayID, favoriteTeams.contains(awayID) { return true }
             return false
         }
+    }
+
+    private var forYouMatches: [APIPlusMatch] {
+        var seen = Set<String>()
+        return (personalizedMatches + favoriteUpcoming)
+            .filter { seen.insert($0.id).inserted }
+            .sorted { ($0.date ?? .distantFuture) < ($1.date ?? .distantFuture) }
     }
 
     var body: some View {
@@ -36,12 +45,17 @@ struct V2HomeView: View {
             .refreshable {
                 async let a: Void = api.refreshToday(force: true)
                 async let b: Void = content.refresh()
-                _ = await (a, b)
+                async let c: Void = loadFavoriteUpcoming(force: true)
+                _ = await (a, b, c)
             }
             .task {
                 async let a: Void = api.refreshToday()
                 async let b: Void = content.refreshIfStale(maxAge: 180)
-                _ = await (a, b)
+                async let c: Void = loadFavoriteUpcoming()
+                _ = await (a, b, c)
+            }
+            .onChange(of: favoriteTeamIDs) { _, _ in
+                Task { await loadFavoriteUpcoming(force: true) }
             }
         }
     }
@@ -98,13 +112,18 @@ struct V2HomeView: View {
         } else {
             VStack(spacing: 10) {
                 sectionHeader("لك", subtitle: "\(favoriteTeams.count) نادي • \(favoritePlayersCount) لاعب")
-                if personalizedMatches.isEmpty {
+                if loadingFavorites && forYouMatches.isEmpty {
+                    ProgressView("جاري تجهيز مباريات متابعاتك...")
+                        .tint(AppTheme.green)
+                        .font(.caption)
+                        .padding(22)
+                } else if forYouMatches.isEmpty {
                     NavigationLink { V2FavoritesView() } label: {
                         HStack(spacing: 12) {
                             Image(systemName: "star.fill").foregroundStyle(AppTheme.green)
                             VStack(alignment: .leading, spacing: 3) {
                                 Text("متابعاتك محفوظة").font(.subheadline.bold()).foregroundStyle(.white)
-                                Text("لا توجد مباراة اليوم للأندية التي تتابعها. افتح مركز المتابعة لرؤية أنديتك ولاعبيك.")
+                                Text("لا توجد مباراة قريبة للأندية التي تتابعها حاليًا. افتح مركز المتابعة لرؤية أنديتك ولاعبيك.")
                                     .font(.caption).foregroundStyle(AppTheme.muted).multilineTextAlignment(.leading)
                             }
                             Spacer()
@@ -116,7 +135,7 @@ struct V2HomeView: View {
                     }
                     .buttonStyle(.plain)
                 } else {
-                    ForEach(personalizedMatches.prefix(4)) { match in
+                    ForEach(forYouMatches.prefix(6)) { match in
                         NavigationLink { V2MatchCenterView(match: match) } label: { APICompactMatchCard(match: match) }
                             .buttonStyle(.plain)
                     }
@@ -168,6 +187,28 @@ struct V2HomeView: View {
                 }
             }
         }
+    }
+
+    @MainActor private func loadFavoriteUpcoming(force: Bool = false) async {
+        guard APIFootballClient.hasKey else { return }
+        let ids = Array(favoriteTeams.prefix(6))
+        guard !ids.isEmpty else {
+            favoriteUpcoming = []
+            return
+        }
+        if !force, !favoriteUpcoming.isEmpty { return }
+        loadingFavorites = true
+        defer { loadingFavorites = false }
+
+        var combined: [APIPlusMatch] = []
+        for id in ids {
+            let items = (try? await APISportsStore.shared.teamFixtures(teamID: id, next: true)) ?? []
+            combined.append(contentsOf: items.prefix(3))
+        }
+        var seen = Set<String>()
+        favoriteUpcoming = combined
+            .filter { seen.insert($0.id).inserted }
+            .sorted { ($0.date ?? .distantFuture) < ($1.date ?? .distantFuture) }
     }
 
     private var setupCard: some View { VStack(spacing: 14) { Image(systemName: "bolt.horizontal.circle.fill").font(.system(size: 46)).foregroundStyle(AppTheme.green); Text("تفعيل البيانات الرياضية").font(.title2.bold()); Text("هذه خطوة مؤقتة أثناء التطوير. في النسخة النهائية سيعمل 90+ مباشرة بدون أي إعداد من المستخدم.").font(.subheadline).foregroundStyle(AppTheme.muted).multilineTextAlignment(.center) }.padding(24).background(AppTheme.card, in: RoundedRectangle(cornerRadius: 24)).padding(.horizontal, 16) }
