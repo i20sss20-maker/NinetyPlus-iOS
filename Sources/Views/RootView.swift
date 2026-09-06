@@ -7,7 +7,7 @@ struct RootView: View {
             HomeView().tag(0).tabItem { Label("الرئيسية", systemImage: "house.fill") }
             EnhancedMatchesView().tag(1).tabItem { Label("المباريات", systemImage: "soccerball") }
             EnhancedNewsView().tag(2).tabItem { Label("الأخبار", systemImage: "newspaper.fill") }
-            TransfersView().tag(3).tabItem { Label("الانتقالات", systemImage: "arrow.left.arrow.right") }
+            EnhancedTransfersView().tag(3).tabItem { Label("الانتقالات", systemImage: "arrow.left.arrow.right") }
             NavigationStack { PlayerCompareView() }.tag(4).tabItem { Label("مقارنة", systemImage: "person.2.fill") }
             MoreView().tag(5).tabItem { Label("المزيد", systemImage: "square.grid.2x2.fill") }
         }
