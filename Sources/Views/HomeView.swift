@@ -3,9 +3,23 @@ import SwiftUI
 struct HomeView: View {
     @State private var segment = "الكل"
     @StateObject private var store = SportsStore.shared
+    @AppStorage("followedMatchIDs") private var followedMatchIDs = ""
+    @AppStorage("favoriteLeague") private var favoriteLeague = "الدوري السعودي"
+
+    private var followedIDs: Set<String> {
+        Set(followedMatchIDs.split(separator: ",").map(String.init))
+    }
+
+    private var followedMatches: [LiveMatch] {
+        store.matches.filter { followedIDs.contains($0.id) }.prefix(4).map { $0 }
+    }
 
     private var liveMatches: [LiveMatch] {
-        store.matches.filter { !$0.status.isEmpty && !$0.status.lowercased().contains("not started") }.prefix(3).map { $0 }
+        store.matches.filter { isLive($0) }.prefix(3).map { $0 }
+    }
+
+    private var favoriteLeagueOption: LeagueOption? {
+        LeagueOption.featured.first { $0.arabicName == favoriteLeague }
     }
 
     var body: some View {
@@ -19,6 +33,13 @@ struct HomeView: View {
                         ProgressView("جاري تحديث 90+...")
                             .tint(AppTheme.green).foregroundStyle(.white).padding(.top, 60)
                     } else {
+                        if segment == "الكل", !followedMatches.isEmpty {
+                            sectionHeader("مبارياتك", trailing: "متابعة")
+                            ForEach(followedMatches) { match in
+                                NavigationLink { MatchDetailView(match: match) } label: { personalMatchCard(match) }.buttonStyle(.plain)
+                            }
+                        }
+
                         if !liveMatches.isEmpty {
                             sectionHeader("مباشر الآن", trailing: "LIVE")
                             ForEach(liveMatches) { match in
@@ -40,6 +61,7 @@ struct HomeView: View {
                         }
 
                         if segment == "الكل" {
+                            favoriteLeagueCard
                             quickLinks
                         }
                     }
@@ -59,6 +81,51 @@ struct HomeView: View {
         case "انتقالات": return []
         default: return store.news
         }
+    }
+
+    private var favoriteLeagueCard: some View {
+        Group {
+            if let league = favoriteLeagueOption {
+                VStack(alignment: .leading, spacing: 10) {
+                    sectionHeader("بطولتك المفضلة", trailing: "مخصص لك")
+                    NavigationLink { LeagueHubView(league: league) } label: {
+                        HStack(spacing: 14) {
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 16).fill(AppTheme.soft)
+                                Image(systemName: "trophy.fill").font(.title2).foregroundStyle(AppTheme.green)
+                            }.frame(width: 58, height: 58)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(league.arabicName).font(.headline).foregroundStyle(.white)
+                                Text("الترتيب • النتائج • المباريات • الفرق").font(.caption).foregroundStyle(AppTheme.muted)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.left").foregroundStyle(AppTheme.green)
+                        }
+                        .padding(14)
+                        .background(AppTheme.card, in: RoundedRectangle(cornerRadius: 18))
+                        .padding(.horizontal, 16)
+                    }.buttonStyle(.plain)
+                }
+            }
+        }
+    }
+
+    private func personalMatchCard(_ m: LiveMatch) -> some View {
+        HStack(spacing: 10) {
+            VStack(spacing: 5) { RemoteBadge(url: m.homeBadge).frame(width: 36, height: 36); Text(m.home).font(.caption.bold()).lineLimit(1) }
+            Spacer()
+            VStack(spacing: 4) {
+                Text(scoreOrTime(m)).font(.headline).foregroundStyle(isLive(m) ? AppTheme.green : .white)
+                Text(m.league).font(.caption2).foregroundStyle(AppTheme.muted).lineLimit(1)
+            }
+            Spacer()
+            VStack(spacing: 5) { RemoteBadge(url: m.awayBadge).frame(width: 36, height: 36); Text(m.away).font(.caption.bold()).lineLimit(1) }
+            Image(systemName: "bell.fill").foregroundStyle(AppTheme.green)
+        }
+        .foregroundStyle(.white)
+        .padding(14)
+        .background(AppTheme.card, in: RoundedRectangle(cornerRadius: 18))
+        .padding(.horizontal, 16)
     }
 
     private func liveCard(_ m: LiveMatch) -> some View {
@@ -170,5 +237,15 @@ struct HomeView: View {
             Text(text).foregroundStyle(AppTheme.muted)
             Button("إعادة المحاولة") { Task { await store.refresh() } }.buttonStyle(.borderedProminent).tint(AppTheme.green)
         }.padding(.top, 40)
+    }
+
+    private func scoreOrTime(_ m: LiveMatch) -> String {
+        if let hs = m.homeScore, let ascore = m.awayScore { return "\(hs) - \(ascore)" }
+        return m.time
+    }
+
+    private func isLive(_ m: LiveMatch) -> Bool {
+        let s = m.status.lowercased()
+        return s.contains("live") || s.contains("1h") || s.contains("2h") || s.contains("half") || s.contains("in progress")
     }
 }
