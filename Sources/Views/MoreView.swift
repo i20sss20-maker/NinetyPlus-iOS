@@ -19,7 +19,6 @@ struct MoreView: View {
                         }
                     }.padding(.vertical, 6)
                 }
-
                 Section("استكشف") {
                     NavigationLink { DiscoverView() } label: { Label("البحث عن الأندية واللاعبين", systemImage: "magnifyingglass") }
                     NavigationLink { LeaguesView() } label: { Label("البطولات والترتيب", systemImage: "trophy.fill") }
@@ -27,7 +26,6 @@ struct MoreView: View {
                         HStack { Label("الفرق المفضلة", systemImage: "star.fill"); Spacer(); Text("\(favoriteCount)").foregroundStyle(.secondary) }
                     }
                 }
-
                 Section("التفضيلات") {
                     Toggle("السماح بالإشعارات", isOn: Binding(get: { notificationsEnabled }, set: { value in
                         notificationsEnabled = value
@@ -38,14 +36,12 @@ struct MoreView: View {
                         ForEach(LeagueOption.featured) { league in Text(league.arabicName).tag(league.arabicName) }
                     }
                 }
-
                 Section("حالة البيانات") {
                     Label("المباريات والبطولات: بيانات مباشرة", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
                     Label("الأخبار والانتقالات: مصادر فعلية", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
                     Text("إذا لم ينشر مزود البيانات معلومة مثل التشكيلة أو الإحصائية فلن يعرض التطبيق بيانات تقديرية أو مختلقة.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
-
                 Section("عن التطبيق") {
                     HStack { Text("الإصدار"); Spacer(); Text("1.0 RC").foregroundStyle(.secondary) }
                     Text("90+ مصمم للآيفون بواجهة عربية RTL وهوية داكنة وخضراء.").font(.caption).foregroundStyle(.secondary)
@@ -97,9 +93,7 @@ struct DiscoverView: View {
                     }
                 }
                 if !loading && teams.isEmpty && players.isEmpty {
-                    ContentUnavailableView(message, systemImage: "magnifyingglass")
-                        .foregroundStyle(.white)
-                        .padding(.top, 80)
+                    ContentUnavailableView(message, systemImage: "magnifyingglass").foregroundStyle(.white).padding(.top, 80)
                 }
             }.padding(.bottom, 30)
         }
@@ -116,15 +110,14 @@ struct DiscoverView: View {
         async let t = try? FootballAPI.searchTeams(text)
         async let p = try? FootballAPI.searchPlayers(text)
         let values = await (t, p)
-        teams = (values.0 ?? []).filter { ($0.strLeague ?? "").localizedCaseInsensitiveContains("football") || true }
+        teams = values.0 ?? []
         players = (values.1 ?? []).filter { ($0.strSport ?? "Soccer") == "Soccer" }
         message = (teams.isEmpty && players.isEmpty) ? "لا توجد نتائج لهذا البحث" : ""
         loading = false
     }
 
-    private func sectionTitle(_ text: String) -> some View {
-        HStack { Text(text).font(.title3.bold()); Spacer() }.padding(.horizontal, 16)
-    }
+    private func sectionTitle(_ text: String) -> some View { HStack { Text(text).font(.title3.bold()); Spacer() }.padding(.horizontal, 16) }
+
     private func teamRow(_ t: TeamProfile) -> some View {
         HStack(spacing: 12) {
             RemoteBadge(url: t.strBadge).frame(width: 48, height: 48)
@@ -135,6 +128,7 @@ struct DiscoverView: View {
             Spacer(); Image(systemName: "chevron.left").foregroundStyle(AppTheme.muted)
         }.padding(14).background(AppTheme.card, in: RoundedRectangle(cornerRadius: 18)).padding(.horizontal, 16)
     }
+
     private func playerRow(_ p: PlayerProfile) -> some View {
         HStack(spacing: 12) {
             AsyncImage(url: (p.strCutout ?? p.strThumb).flatMap(URL.init(string:))) { phase in
@@ -172,7 +166,6 @@ struct PlayerDetailView: View {
                         }
                     }.padding(16)
                 }.clipShape(RoundedRectangle(cornerRadius: 22))
-
                 VStack(alignment: .leading, spacing: 12) {
                     detail("المركز", player.strPosition)
                     detail("الجنسية", player.strNationality)
@@ -184,11 +177,11 @@ struct PlayerDetailView: View {
                         Divider().overlay(Color.white.opacity(0.1))
                         Text(desc).font(.subheadline).foregroundStyle(AppTheme.muted).lineLimit(10)
                     }
-                }.frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(18).background(AppTheme.card, in: RoundedRectangle(cornerRadius: 18))
+                }.frame(maxWidth: .infinity, alignment: .leading).padding(18).background(AppTheme.card, in: RoundedRectangle(cornerRadius: 18))
             }.padding(16)
         }.background(AppTheme.bg.ignoresSafeArea()).navigationTitle(player.strPlayer ?? "اللاعب").navigationBarTitleDisplayMode(.inline)
     }
+
     private func detail(_ title: String, _ value: String?) -> some View {
         Group { if let value, !value.isEmpty { HStack { Text(title).foregroundStyle(AppTheme.muted); Spacer(); Text(value).bold() } } }
     }
@@ -203,7 +196,7 @@ struct FavoriteTeamsView: View {
         ScrollView {
             VStack(spacing: 14) {
                 if loading { ProgressView("جاري تحميل المفضلة...").tint(AppTheme.green).padding(.top, 60) }
-                else if teams.isEmpty { ContentUnavailableView("لا توجد فرق مفضلة", systemImage: "star", description: Text("أضف فريقًا للمفضلة من صفحة النادي." )).padding(.top, 60) }
+                else if teams.isEmpty { ContentUnavailableView("لا توجد فرق مفضلة", systemImage: "star", description: Text("أضف فريقًا للمفضلة من صفحة النادي.")).padding(.top, 60) }
                 else {
                     ForEach(teams) { team in
                         if let id = team.idTeam {
@@ -220,10 +213,16 @@ struct FavoriteTeamsView: View {
             }
         }.background(AppTheme.bg.ignoresSafeArea()).navigationTitle("الفرق المفضلة").task { await load() }
     }
+
     @MainActor private func load() async {
         let ids = favoriteTeamIDs.split(separator: ",").map(String.init)
         var loaded: [TeamProfile] = []
-        for id in ids.prefix(20) { if let team = try? await FootballAPI.team(id: id) { if let team { loaded.append(team) } } }
-        teams = loaded; loading = false
+        for id in ids.prefix(20) {
+            do {
+                if let team = try await FootballAPI.team(id: id) { loaded.append(team) }
+            } catch { }
+        }
+        teams = loaded
+        loading = false
     }
 }
