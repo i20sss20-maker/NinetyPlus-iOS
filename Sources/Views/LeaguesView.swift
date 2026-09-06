@@ -8,7 +8,7 @@ struct LeaguesView: View {
                     TopBar(title: "البطولات")
                     ForEach(LeagueOption.featured) { league in
                         NavigationLink {
-                            StandingsView(league: league)
+                            LeagueHubView(league: league)
                         } label: {
                             HStack(spacing: 14) {
                                 ZStack {
