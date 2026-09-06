@@ -15,13 +15,13 @@ struct RootView: View {
                 .tag(1)
                 .tabItem { Label("المباريات", systemImage: "soccerball") }
 
-            EnhancedNewsView()
+            NavigationStack { DiscoverView() }
                 .tag(2)
-                .tabItem { Label("الأخبار", systemImage: "newspaper.fill") }
+                .tabItem { Label("البحث", systemImage: "magnifyingglass") }
 
-            EnhancedTransfersView()
+            EnhancedNewsView()
                 .tag(3)
-                .tabItem { Label("الانتقالات", systemImage: "arrow.left.arrow.right") }
+                .tabItem { Label("الأخبار", systemImage: "newspaper.fill") }
 
             MoreView()
                 .tag(4)
