@@ -3,7 +3,20 @@ import SwiftUI
 struct V2HomeView: View {
     @StateObject private var api = APISportsStore.shared
     @StateObject private var content = SportsStore.shared
+    @AppStorage("favoriteTeamIDs") private var favoriteTeamIDs = ""
+    @AppStorage("favoritePlayerIDs") private var favoritePlayerIDs = ""
+
     private var live: [APIPlusMatch] { api.today.filter { api.isLive($0.status) } }
+    private var favoriteTeams: Set<String> { Set(favoriteTeamIDs.split(separator: ",").map(String.init)) }
+    private var favoritePlayersCount: Int { favoritePlayerIDs.split(separator: ",").count }
+    private var personalizedMatches: [APIPlusMatch] {
+        guard !favoriteTeams.isEmpty else { return [] }
+        return api.today.filter { match in
+            if let homeID = match.homeID, favoriteTeams.contains(homeID) { return true }
+            if let awayID = match.awayID, favoriteTeams.contains(awayID) { return true }
+            return false
+        }
+    }
 
     var body: some View {
         NavigationStack {
@@ -12,6 +25,7 @@ struct V2HomeView: View {
                     TopBar(title: nil, showsLogo: true)
                     if !APIFootballClient.hasKey { setupCard } else {
                         liveHero
+                        forYouSection
                         todaySection
                         quickActions
                         newsSection
@@ -58,6 +72,59 @@ struct V2HomeView: View {
         }
     }
 
+    @ViewBuilder private var forYouSection: some View {
+        if favoriteTeams.isEmpty && favoritePlayersCount == 0 {
+            VStack(spacing: 10) {
+                sectionHeader("لك", subtitle: "خصص تجربتك")
+                NavigationLink { V2FavoritesView() } label: {
+                    HStack(spacing: 14) {
+                        Image(systemName: "star.circle.fill")
+                            .font(.system(size: 34))
+                            .foregroundStyle(AppTheme.green)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("خل 90+ يعرف اهتماماتك").font(.headline).foregroundStyle(.white)
+                            Text("تابع أنديتك ولاعبيك وبتظهر مبارياتهم ومحتواهم هنا تلقائيًا.")
+                                .font(.caption).foregroundStyle(AppTheme.muted).multilineTextAlignment(.leading)
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.left").foregroundStyle(AppTheme.muted)
+                    }
+                    .padding(16)
+                    .background(AppTheme.card, in: RoundedRectangle(cornerRadius: 20))
+                    .padding(.horizontal, 16)
+                }
+                .buttonStyle(.plain)
+            }
+        } else {
+            VStack(spacing: 10) {
+                sectionHeader("لك", subtitle: "\(favoriteTeams.count) نادي • \(favoritePlayersCount) لاعب")
+                if personalizedMatches.isEmpty {
+                    NavigationLink { V2FavoritesView() } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: "star.fill").foregroundStyle(AppTheme.green)
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text("متابعاتك محفوظة").font(.subheadline.bold()).foregroundStyle(.white)
+                                Text("لا توجد مباراة اليوم للأندية التي تتابعها. افتح مركز المتابعة لرؤية أنديتك ولاعبيك.")
+                                    .font(.caption).foregroundStyle(AppTheme.muted).multilineTextAlignment(.leading)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.left").foregroundStyle(AppTheme.muted)
+                        }
+                        .padding(14)
+                        .background(AppTheme.card, in: RoundedRectangle(cornerRadius: 18))
+                        .padding(.horizontal, 16)
+                    }
+                    .buttonStyle(.plain)
+                } else {
+                    ForEach(personalizedMatches.prefix(4)) { match in
+                        NavigationLink { V2MatchCenterView(match: match) } label: { APICompactMatchCard(match: match) }
+                            .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+    }
+
     private var todaySection: some View {
         VStack(spacing: 10) {
             sectionHeader("مباريات اليوم", subtitle: "\(api.today.count) مباراة")
@@ -74,6 +141,7 @@ struct V2HomeView: View {
                 HStack(spacing: 10) {
                     NavigationLink { V2DiscoverView() } label: { quickCard("بحث", icon: "magnifyingglass") }
                     NavigationLink { V2LeagueHubView(league: LeagueOption.featured[0]) } label: { quickCard("الدوري السعودي", icon: "list.number") }
+                    NavigationLink { V2FavoritesView() } label: { quickCard("لك", icon: "star.fill") }
                     NavigationLink { EnhancedTransfersView() } label: { quickCard("الانتقالات", icon: "arrow.left.arrow.right") }
                     NavigationLink { V2MatchesView() } label: { quickCard("كل المباريات", icon: "calendar") }
                 }.padding(.horizontal, 16)
