@@ -2,20 +2,20 @@ import SwiftUI
 
 struct RootView: View {
     @State private var selection = 0
-    @Environment(\.scenePhase) private var scenePhase
-    @StateObject private var store = SportsStore.shared
+    @State private var showAPISetup = false
+    @AppStorage(APIFootballClient.keyDefaultsName) private var apiKey = ""
 
     var body: some View {
         TabView(selection: $selection) {
-            HomeView()
+            APIHomeView()
                 .tag(0)
                 .tabItem { Label("الرئيسية", systemImage: "house.fill") }
 
-            EnhancedMatchesView()
+            APIMatchesView()
                 .tag(1)
                 .tabItem { Label("المباريات", systemImage: "soccerball") }
 
-            NavigationStack { DiscoverView() }
+            NavigationStack { APIDiscoverView() }
                 .tag(2)
                 .tabItem { Label("البحث", systemImage: "magnifyingglass") }
 
@@ -23,17 +23,21 @@ struct RootView: View {
                 .tag(3)
                 .tabItem { Label("الأخبار", systemImage: "newspaper.fill") }
 
-            MoreView()
+            APIMoreView()
                 .tag(4)
                 .tabItem { Label("المزيد", systemImage: "square.grid.2x2.fill") }
         }
         .tint(AppTheme.green)
         .background(AppTheme.bg.ignoresSafeArea())
         .environment(\.layoutDirection, .rightToLeft)
-        .task { await store.refreshIfStale(maxAge: 90) }
-        .onChange(of: scenePhase) { _, phase in
-            guard phase == .active else { return }
-            Task { await store.refreshIfStale(maxAge: 90) }
+        .task {
+            showAPISetup = apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            if !showAPISetup { await APISportsStore.shared.refreshToday() }
         }
+        .onChange(of: apiKey) { _, value in
+            guard !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+            Task { await APISportsStore.shared.refreshToday(force: true) }
+        }
+        .sheet(isPresented: $showAPISetup) { APIKeySetupView() }
     }
 }
