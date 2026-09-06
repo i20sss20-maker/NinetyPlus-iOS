@@ -3,7 +3,6 @@ import SwiftUI
 struct V2HomeView: View {
     @StateObject private var api = APISportsStore.shared
     @StateObject private var content = SportsStore.shared
-
     private var live: [APIPlusMatch] { api.today.filter { api.isLive($0.status) } }
 
     var body: some View {
@@ -54,7 +53,6 @@ struct V2HomeView: View {
                 }
                 .foregroundStyle(.white).padding(18)
                 .background(LinearGradient(colors: [AppTheme.card, AppTheme.green.opacity(0.12)], startPoint: .topTrailing, endPoint: .bottomLeading), in: RoundedRectangle(cornerRadius: 24))
-                .overlay { RoundedRectangle(cornerRadius: 24).stroke(AppTheme.green.opacity(live.isEmpty ? 0.12 : 0.3), lineWidth: 1) }
                 .padding(.horizontal, 16)
             }.buttonStyle(.plain)
         }
@@ -65,11 +63,7 @@ struct V2HomeView: View {
             sectionHeader("مباريات اليوم", subtitle: "\(api.today.count) مباراة")
             if api.loading && api.today.isEmpty { ProgressView().tint(AppTheme.green).padding(30) }
             else if api.today.isEmpty { emptyCard("لا توجد مباريات متاحة اليوم", icon: "soccerball") }
-            else {
-                ForEach(Array(api.today.prefix(6))) { match in
-                    NavigationLink { V2MatchCenterView(match: match) } label: { APICompactMatchCard(match: match) }.buttonStyle(.plain)
-                }
-            }
+            else { ForEach(Array(api.today.prefix(6))) { match in NavigationLink { V2MatchCenterView(match: match) } label: { APICompactMatchCard(match: match) }.buttonStyle(.plain) } }
         }
     }
 
@@ -108,14 +102,7 @@ struct V2HomeView: View {
         }
     }
 
-    private var setupCard: some View {
-        VStack(spacing: 14) {
-            Image(systemName: "bolt.horizontal.circle.fill").font(.system(size: 46)).foregroundStyle(AppTheme.green)
-            Text("تفعيل البيانات الرياضية").font(.title2.bold())
-            Text("هذه خطوة مؤقتة أثناء التطوير. في النسخة النهائية سيعمل 90+ مباشرة بدون أي إعداد من المستخدم.").font(.subheadline).foregroundStyle(AppTheme.muted).multilineTextAlignment(.center)
-        }.padding(24).background(AppTheme.card, in: RoundedRectangle(cornerRadius: 24)).padding(.horizontal, 16)
-    }
-
+    private var setupCard: some View { VStack(spacing: 14) { Image(systemName: "bolt.horizontal.circle.fill").font(.system(size: 46)).foregroundStyle(AppTheme.green); Text("تفعيل البيانات الرياضية").font(.title2.bold()); Text("هذه خطوة مؤقتة أثناء التطوير. في النسخة النهائية سيعمل 90+ مباشرة بدون أي إعداد من المستخدم.").font(.subheadline).foregroundStyle(AppTheme.muted).multilineTextAlignment(.center) }.padding(24).background(AppTheme.card, in: RoundedRectangle(cornerRadius: 24)).padding(.horizontal, 16) }
     private func sectionHeader(_ title: String, subtitle: String?) -> some View { HStack(alignment: .firstTextBaseline) { Text(title).font(.title3.bold()); Spacer(); if let subtitle { Text(subtitle).font(.caption).foregroundStyle(AppTheme.muted) } }.padding(.horizontal, 16) }
     private func heroTeam(_ name: String, _ logo: String?) -> some View { VStack(spacing: 7) { RemoteBadge(url: logo).frame(width: 64, height: 64); Text(name).font(.subheadline.bold()).multilineTextAlignment(.center).lineLimit(2).frame(width: 100) } }
     private func quickCard(_ title: String, icon: String) -> some View { VStack(spacing: 9) { Image(systemName: icon).font(.title2.bold()).foregroundStyle(AppTheme.green); Text(title).font(.caption.bold()).foregroundStyle(.white).lineLimit(1) }.frame(width: 112, height: 88).background(AppTheme.card, in: RoundedRectangle(cornerRadius: 18)) }
