@@ -19,11 +19,9 @@ struct MatchCenterView: View {
             VStack(spacing: 16) {
                 header
                 SegmentBar(items: ["نظرة", "الإحصائيات", "الأحداث", "التشكيلة", "H2H"], selected: $tab)
-
                 if insight.loading || extraLoading {
-                    ProgressView("جاري تحميل تفاصيل المباراة...").tint(AppTheme.green).padding(.vertical, 28)
+                    ProgressView("جاري تحميل تفاصيل المباراة...").tint(AppTheme.green).padding(.vertical, 20)
                 }
-
                 switch tab {
                 case "الإحصائيات": statsSection
                 case "الأحداث": timelineSection
@@ -31,8 +29,7 @@ struct MatchCenterView: View {
                 case "H2H": h2hSection
                 default: overviewSection
                 }
-            }
-            .padding(.vertical, 12)
+            }.padding(.vertical, 12)
         }
         .background(AppTheme.bg.ignoresSafeArea())
         .navigationTitle("مركز المباراة")
@@ -40,15 +37,13 @@ struct MatchCenterView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button(action: toggleFollow) {
-                    Image(systemName: followed ? "bell.fill" : "bell")
-                        .foregroundStyle(AppTheme.green)
+                    Image(systemName: followed ? "bell.fill" : "bell").foregroundStyle(AppTheme.green)
                 }
             }
         }
         .task {
-            async let details: Void = insight.load(eventID: match.id)
-            async let form: Void = loadFormAndH2H()
-            _ = await (details, form)
+            await insight.load(eventID: match.id)
+            await loadFormAndH2H()
         }
     }
 
@@ -59,22 +54,19 @@ struct MatchCenterView: View {
                 Spacer()
                 Text(statusText).font(.caption.bold()).foregroundStyle(isLive ? AppTheme.green : AppTheme.muted)
             }
-            HStack(spacing: 16) {
-                club(match.home, badge: match.homeBadge)
+            HStack(spacing: 14) {
+                club(match.home, match.homeBadge)
                 Spacer()
                 VStack(spacing: 5) {
-                    if let hs = match.homeScore, let ascore = match.awayScore {
-                        Text("\(hs) - \(ascore)").font(.system(size: 40, weight: .black))
+                    if let h = match.homeScore, let a = match.awayScore {
+                        Text("\(h) - \(a)").font(.system(size: 40, weight: .black))
                     } else {
                         Text(match.time).font(.title2.bold()).foregroundStyle(AppTheme.green)
                     }
-                    if isLive {
-                        Label("مباشر", systemImage: "dot.radiowaves.left.and.right")
-                            .font(.caption.bold()).foregroundStyle(AppTheme.green)
-                    }
+                    if isLive { Text("مباشر").font(.caption.bold()).foregroundStyle(AppTheme.green) }
                 }
                 Spacer()
-                club(match.away, badge: match.awayBadge)
+                club(match.away, match.awayBadge)
             }
         }
         .padding(18)
@@ -86,11 +78,11 @@ struct MatchCenterView: View {
     private var overviewSection: some View {
         VStack(spacing: 14) {
             HStack(spacing: 10) {
-                summaryChip(title: "الحالة", value: statusText, icon: "clock.fill")
-                summaryChip(title: "النتيجة", value: scoreText, icon: "sportscourt.fill")
-            }
-            formCard(title: match.home, events: homeRecent, teamName: match.home)
-            formCard(title: match.away, events: awayRecent, teamName: match.away)
+                summaryChip("الحالة", statusText, "clock.fill")
+                summaryChip("النتيجة", scoreText, "sportscourt.fill")
+            }.padding(.horizontal, 16)
+            formCard(match.home, events: homeRecent)
+            formCard(match.away, events: awayRecent)
             if !h2h.isEmpty {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("آخر المواجهات").font(.headline)
@@ -105,22 +97,18 @@ struct MatchCenterView: View {
 
     private var statsSection: some View {
         VStack(spacing: 0) {
-            if insight.stats.isEmpty {
-                unavailable("لا توجد إحصائيات منشورة لهذه المباراة")
-            } else {
+            if insight.stats.isEmpty { unavailable("لا توجد إحصائيات منشورة لهذه المباراة") }
+            else {
                 ForEach(insight.stats) { stat in
-                    VStack(spacing: 8) {
-                        HStack {
-                            Text(stat.home).bold().frame(width: 55, alignment: .leading)
-                            Spacer()
-                            Text(arabicStat(stat.name)).font(.caption).foregroundStyle(AppTheme.muted).multilineTextAlignment(.center)
-                            Spacer()
-                            Text(stat.away).bold().frame(width: 55, alignment: .trailing)
-                        }
-                        progressBars(home: stat.home, away: stat.away)
-                        Divider().overlay(Color.white.opacity(0.08))
+                    HStack {
+                        Text(stat.home).bold().frame(width: 55, alignment: .leading)
+                        Spacer()
+                        Text(arabicStat(stat.name)).font(.caption).foregroundStyle(AppTheme.muted).multilineTextAlignment(.center)
+                        Spacer()
+                        Text(stat.away).bold().frame(width: 55, alignment: .trailing)
                     }
-                    .padding(.horizontal, 16).padding(.vertical, 10)
+                    .padding(.horizontal, 16).padding(.vertical, 12)
+                    Divider().overlay(Color.white.opacity(0.08))
                 }
             }
         }
@@ -130,21 +118,18 @@ struct MatchCenterView: View {
 
     private var timelineSection: some View {
         VStack(spacing: 0) {
-            if insight.timeline.isEmpty {
-                unavailable("لا توجد أحداث تفصيلية منشورة لهذه المباراة")
-            } else {
+            if insight.timeline.isEmpty { unavailable("لا توجد أحداث تفصيلية منشورة لهذه المباراة") }
+            else {
                 ForEach(insight.timeline) { event in
                     HStack(spacing: 12) {
                         Text("\(event.intTime ?? "-")′").font(.headline).foregroundStyle(AppTheme.green).frame(width: 42)
                         Image(systemName: timelineIcon(event.strTimeline ?? "")).foregroundStyle(AppTheme.green)
                         VStack(alignment: .leading, spacing: 3) {
                             Text(event.strPlayer ?? event.strTeam ?? "حدث").font(.subheadline.bold())
-                            Text(event.strTimelineDetail ?? event.strComment ?? event.strTimeline ?? "")
-                                .font(.caption).foregroundStyle(AppTheme.muted)
+                            Text(event.strTimelineDetail ?? event.strComment ?? event.strTimeline ?? "").font(.caption).foregroundStyle(AppTheme.muted)
                         }
                         Spacer()
-                    }
-                    .padding(14)
+                    }.padding(14)
                     Divider().overlay(Color.white.opacity(0.08))
                 }
             }
@@ -155,64 +140,49 @@ struct MatchCenterView: View {
 
     private var lineupSection: some View {
         VStack(spacing: 14) {
-            if insight.lineup.isEmpty {
-                unavailable("التشكيلة غير متاحة من المصدر لهذه المباراة")
-                    .padding(.horizontal, 16)
-            } else {
-                lineupTeam(title: match.home, home: true)
-                lineupTeam(title: match.away, home: false)
+            if insight.lineup.isEmpty { unavailable("التشكيلة غير متاحة من المصدر لهذه المباراة") }
+            else {
+                lineupTeam(match.home, home: true)
+                lineupTeam(match.away, home: false)
             }
-        }
-        .padding(.horizontal, 16)
+        }.padding(.horizontal, 16)
     }
 
     private var h2hSection: some View {
         VStack(spacing: 12) {
-            if h2h.isEmpty {
-                unavailable("لا توجد مواجهات سابقة متاحة من المصدر")
-                    .padding(.horizontal, 16)
-            } else {
-                ForEach(h2h.prefix(8)) { event in
-                    compactEvent(event)
-                        .padding(.horizontal, 16)
-                }
-            }
-        }
+            if h2h.isEmpty { unavailable("لا توجد مواجهات سابقة متاحة من المصدر") }
+            else { ForEach(h2h.prefix(8)) { event in compactEvent(event) } }
+        }.padding(.horizontal, 16)
     }
 
-    private func summaryChip(title: String, value: String, icon: String) -> some View {
+    private func summaryChip(_ title: String, _ value: String, _ icon: String) -> some View {
         VStack(spacing: 7) {
             Image(systemName: icon).foregroundStyle(AppTheme.green)
             Text(value).font(.headline).lineLimit(1)
             Text(title).font(.caption2).foregroundStyle(AppTheme.muted)
         }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 14)
+        .frame(maxWidth: .infinity).padding(.vertical, 14)
         .background(AppTheme.card, in: RoundedRectangle(cornerRadius: 16))
     }
 
-    private func formCard(title: String, events: [TeamEvent], teamName: String) -> some View {
+    private func formCard(_ teamName: String, events: [TeamEvent]) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack { Text("فورمة \(title)").font(.headline); Spacer(); Text("آخر 5").font(.caption).foregroundStyle(AppTheme.muted) }
-            if events.isEmpty {
-                Text("غير متاحة من المصدر").font(.caption).foregroundStyle(AppTheme.muted)
-            } else {
+            HStack { Text("فورمة \(teamName)").font(.headline); Spacer(); Text("آخر 5").font(.caption).foregroundStyle(AppTheme.muted) }
+            if events.isEmpty { Text("غير متاحة من المصدر").font(.caption).foregroundStyle(AppTheme.muted) }
+            else {
                 HStack(spacing: 8) {
                     ForEach(Array(events.prefix(5))) { event in
-                        let letter = formLetter(event, teamName: teamName)
-                        Text(letter)
-                            .font(.caption.bold())
-                            .foregroundStyle(letter == "ف" ? .black : .white)
+                        let result = formLetter(event, teamName: teamName)
+                        Text(result).font(.caption.bold())
+                            .foregroundStyle(result == "ف" ? .black : .white)
                             .frame(width: 32, height: 32)
-                            .background(formColor(letter), in: Circle())
+                            .background(formColor(result), in: Circle())
                     }
                     Spacer()
                 }
             }
         }
-        .padding(16)
-        .background(AppTheme.card, in: RoundedRectangle(cornerRadius: 18))
-        .padding(.horizontal, 16)
+        .padding(16).background(AppTheme.card, in: RoundedRectangle(cornerRadius: 18)).padding(.horizontal, 16)
     }
 
     private func compactEvent(_ event: TeamEvent) -> some View {
@@ -222,48 +192,23 @@ struct MatchCenterView: View {
                 Text(event.strAwayTeam ?? "—").font(.subheadline.bold()).lineLimit(1)
             }
             Spacer()
-            if let hs = event.intHomeScore, let ascore = event.intAwayScore {
-                Text("\(hs) - \(ascore)").font(.headline)
-            } else {
-                Text(String((event.strTime ?? "—").prefix(5))).font(.headline).foregroundStyle(AppTheme.green)
-            }
+            if let h = event.intHomeScore, let a = event.intAwayScore { Text("\(h) - \(a)").font(.headline) }
+            else { Text(String((event.strTime ?? "—").prefix(5))).font(.headline).foregroundStyle(AppTheme.green) }
             Text(event.dateEvent ?? "").font(.caption2).foregroundStyle(AppTheme.muted)
         }
-        .padding(13)
-        .background(AppTheme.card, in: RoundedRectangle(cornerRadius: 16))
+        .padding(13).background(AppTheme.card, in: RoundedRectangle(cornerRadius: 16))
     }
 
-    private func progressBars(home: String, away: String) -> some View {
-        let h = numeric(home), a = numeric(away), total = max(h + a, 1)
-        return HStack(spacing: 6) {
-            GeometryReader { geo in
-                HStack(spacing: 0) {
-                    Spacer(minLength: 0)
-                    RoundedRectangle(cornerRadius: 3).fill(AppTheme.green)
-                        .frame(width: geo.size.width * CGFloat(h / total), height: 5)
-                }
-            }
-            GeometryReader { geo in
-                HStack(spacing: 0) {
-                    RoundedRectangle(cornerRadius: 3).fill(Color.white.opacity(0.35))
-                        .frame(width: geo.size.width * CGFloat(a / total), height: 5)
-                    Spacer(minLength: 0)
-                }
-            }
-        }.frame(height: 5)
-    }
-
-    private func lineupTeam(title: String, home: Bool) -> some View {
+    private func lineupTeam(_ title: String, home: Bool) -> some View {
         let players = insight.lineup.filter { ($0.strHome == "Yes") == home }
         return VStack(alignment: .leading, spacing: 10) {
             Text(title).font(.headline).foregroundStyle(AppTheme.green)
             ForEach(players) { player in
                 HStack(spacing: 10) {
                     AsyncImage(url: (player.strCutout ?? player.strThumb).flatMap(URL.init(string:))) { phase in
-                        if case .success(let img) = phase { img.resizable().scaledToFit() }
+                        if case .success(let image) = phase { image.resizable().scaledToFit() }
                         else { Image(systemName: "person.crop.circle.fill").resizable().foregroundStyle(AppTheme.soft) }
-                    }
-                    .frame(width: 38, height: 38)
+                    }.frame(width: 38, height: 38)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(player.strPlayer ?? "لاعب").font(.subheadline.bold())
                         Text("\(player.intSquadNumber ?? "-") • \(player.strPosition ?? "")\(player.strSubstitute == "Yes" ? " • بديل" : "")")
@@ -272,9 +217,7 @@ struct MatchCenterView: View {
                     Spacer()
                 }
             }
-        }
-        .padding(16)
-        .background(AppTheme.card, in: RoundedRectangle(cornerRadius: 18))
+        }.padding(16).background(AppTheme.card, in: RoundedRectangle(cornerRadius: 18))
     }
 
     private func unavailable(_ text: String) -> some View {
@@ -282,12 +225,10 @@ struct MatchCenterView: View {
             Image(systemName: "info.circle").font(.title2).foregroundStyle(AppTheme.green)
             Text(text).font(.subheadline).foregroundStyle(AppTheme.muted).multilineTextAlignment(.center)
         }
-        .frame(maxWidth: .infinity)
-        .padding(28)
-        .background(AppTheme.card, in: RoundedRectangle(cornerRadius: 18))
+        .frame(maxWidth: .infinity).padding(28).background(AppTheme.card, in: RoundedRectangle(cornerRadius: 18))
     }
 
-    private func club(_ name: String, badge: String?) -> some View {
+    private func club(_ name: String, _ badge: String?) -> some View {
         VStack(spacing: 7) {
             RemoteBadge(url: badge).frame(width: 62, height: 62)
             Text(name).font(.headline).multilineTextAlignment(.center).lineLimit(2).frame(maxWidth: 108)
@@ -296,25 +237,23 @@ struct MatchCenterView: View {
 
     @MainActor private func loadFormAndH2H() async {
         extraLoading = true
-        async let homeSearch = try? FootballAPI.searchTeams(match.home)
-        async let awaySearch = try? FootballAPI.searchTeams(match.away)
-        let searched = await (homeSearch, awaySearch)
-        let homeID = searched.0?.first(where: { ($0.strTeam ?? "").localizedCaseInsensitiveCompare(match.home) == .orderedSame })?.idTeam ?? searched.0?.first?.idTeam
-        let awayID = searched.1?.first(where: { ($0.strTeam ?? "").localizedCaseInsensitiveCompare(match.away) == .orderedSame })?.idTeam ?? searched.1?.first?.idTeam
-
-        async let homeEvents = homeID.flatMap { id in Task { try? await FootballAPI.lastEvents(teamID: id) } }
-        async let awayEvents = awayID.flatMap { id in Task { try? await FootballAPI.lastEvents(teamID: id) } }
-
-        if let task = homeEvents { homeRecent = await task.value ?? [] }
-        if let task = awayEvents { awayRecent = await task.value ?? [] }
-
+        let homeTeams = (try? await FootballAPI.searchTeams(match.home)) ?? []
+        let awayTeams = (try? await FootballAPI.searchTeams(match.away)) ?? []
+        let homeID = exactTeamID(in: homeTeams, name: match.home)
+        let awayID = exactTeamID(in: awayTeams, name: match.away)
+        if let homeID { homeRecent = (try? await FootballAPI.lastEvents(teamID: homeID)) ?? [] }
+        if let awayID { awayRecent = (try? await FootballAPI.lastEvents(teamID: awayID)) ?? [] }
         h2h = homeRecent.filter { event in
-            let home = event.strHomeTeam ?? ""
-            let away = event.strAwayTeam ?? ""
-            return (home.localizedCaseInsensitiveContains(match.home) && away.localizedCaseInsensitiveContains(match.away)) ||
-                   (home.localizedCaseInsensitiveContains(match.away) && away.localizedCaseInsensitiveContains(match.home))
+            let h = event.strHomeTeam ?? ""
+            let a = event.strAwayTeam ?? ""
+            return (h.localizedCaseInsensitiveContains(match.home) && a.localizedCaseInsensitiveContains(match.away)) ||
+                   (h.localizedCaseInsensitiveContains(match.away) && a.localizedCaseInsensitiveContains(match.home))
         }
         extraLoading = false
+    }
+
+    private func exactTeamID(in teams: [TeamProfile], name: String) -> String? {
+        teams.first(where: { ($0.strTeam ?? "").localizedCaseInsensitiveCompare(name) == .orderedSame })?.idTeam ?? teams.first?.idTeam
     }
 
     private func toggleFollow() {
@@ -325,7 +264,7 @@ struct MatchCenterView: View {
 
     private var isLive: Bool {
         let s = match.status.lowercased()
-        return s.contains("live") || s.contains("1h") || s.contains("2h") || s.contains("half") || s.contains("in progress")
+        return s.contains("live") || s.contains("1h") || s.contains("2h") || s.contains("half") || s.contains("in progress") || s == "ht"
     }
 
     private var statusText: String {
@@ -343,17 +282,17 @@ struct MatchCenterView: View {
     }
 
     private func formLetter(_ event: TeamEvent, teamName: String) -> String {
-        guard let hs = Int(event.intHomeScore ?? ""), let ascore = Int(event.intAwayScore ?? "") else { return "-" }
+        guard let h = Int(event.intHomeScore ?? ""), let a = Int(event.intAwayScore ?? "") else { return "-" }
         let isHome = (event.strHomeTeam ?? "").localizedCaseInsensitiveContains(teamName)
-        let teamScore = isHome ? hs : ascore
-        let opponentScore = isHome ? ascore : hs
-        if teamScore > opponentScore { return "ف" }
-        if teamScore < opponentScore { return "خ" }
+        let teamScore = isHome ? h : a
+        let opponent = isHome ? a : h
+        if teamScore > opponent { return "ف" }
+        if teamScore < opponent { return "خ" }
         return "ت"
     }
 
-    private func formColor(_ letter: String) -> Color {
-        switch letter {
+    private func formColor(_ result: String) -> Color {
+        switch result {
         case "ف": return AppTheme.green
         case "خ": return Color.red.opacity(0.8)
         case "ت": return Color.gray.opacity(0.7)
@@ -361,18 +300,8 @@ struct MatchCenterView: View {
         }
     }
 
-    private func numeric(_ value: String) -> Double {
-        let cleaned = value.replacingOccurrences(of: "%", with: "").replacingOccurrences(of: ",", with: ".")
-        return Double(cleaned) ?? 0
-    }
-
     private func arabicStat(_ value: String) -> String {
-        let map = [
-            "Shots on Goal":"تسديدات على المرمى", "Shots off Goal":"تسديدات خارج المرمى",
-            "Total Shots":"إجمالي التسديدات", "Blocked Shots":"تسديدات محجوبة",
-            "Possession":"الاستحواذ", "Corners":"الركنيات", "Fouls":"الأخطاء",
-            "Yellow Cards":"بطاقات صفراء", "Red Cards":"بطاقات حمراء", "Passes":"التمريرات"
-        ]
+        let map = ["Shots on Goal":"تسديدات على المرمى", "Shots off Goal":"تسديدات خارج المرمى", "Total Shots":"إجمالي التسديدات", "Blocked Shots":"تسديدات محجوبة", "Possession":"الاستحواذ", "Corners":"الركنيات", "Fouls":"الأخطاء", "Yellow Cards":"بطاقات صفراء", "Red Cards":"بطاقات حمراء", "Passes":"التمريرات"]
         return map[value] ?? value
     }
 
