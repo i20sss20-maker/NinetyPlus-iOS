@@ -72,7 +72,7 @@ struct V2HomeView: View {
             sectionHeader("استكشف 90+", subtitle: nil)
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
-                    NavigationLink { APIDiscoverView() } label: { quickCard("بحث", icon: "magnifyingglass") }
+                    NavigationLink { V2DiscoverView() } label: { quickCard("بحث", icon: "magnifyingglass") }
                     NavigationLink { APIStandingsView(league: LeagueOption.featured[0]) } label: { quickCard("الدوري السعودي", icon: "list.number") }
                     NavigationLink { EnhancedTransfersView() } label: { quickCard("الانتقالات", icon: "arrow.left.arrow.right") }
                     NavigationLink { V2MatchesView() } label: { quickCard("كل المباريات", icon: "calendar") }
