@@ -2,87 +2,140 @@ import SwiftUI
 
 struct MatchesView: View {
     @State private var segment = "الكل"
+    @StateObject private var store = SportsStore.shared
+
+    var filtered: [LiveMatch] {
+        switch segment {
+        case "المنتهية": return store.matches.filter { $0.homeScore != nil && $0.awayScore != nil }
+        case "القادمة": return store.matches.filter { $0.homeScore == nil && $0.awayScore == nil }
+        default: return store.matches
+        }
+    }
+
     var body: some View {
         ScrollView {
             VStack(spacing: 16) {
                 TopBar(title: "المباريات")
-                SegmentBar(items: ["الكل", "مباشر", "القادمة", "المنتهية"], selected: $segment)
-                liveCard
-                ForEach(MockData.matches.dropFirst()) { match in matchRow(match) }
+                SegmentBar(items: ["الكل", "القادمة", "المنتهية"], selected: $segment)
+                if store.isLoading && store.matches.isEmpty {
+                    ProgressView("جاري جلب مباريات اليوم...").tint(AppTheme.green).foregroundStyle(.white).padding(.top, 60)
+                } else if filtered.isEmpty {
+                    Text("لا توجد مباريات ضمن هذا القسم اليوم").foregroundStyle(AppTheme.muted).padding(.top, 60)
+                } else {
+                    ForEach(filtered) { match in matchCard(match) }
+                }
             }.padding(.bottom, 24)
-        }.background(AppTheme.bg.ignoresSafeArea())
-    }
-    private var liveCard: some View {
-        VStack(spacing: 18) {
-            Text("مباشر").font(.caption.bold()).foregroundStyle(.black).padding(.horizontal, 12).padding(.vertical, 6).background(AppTheme.green, in: Capsule())
-            HStack {
-                team("النسر", icon: "shield.fill")
-                Spacer()
-                VStack { Text("2 - 1").font(.system(size: 42, weight: .bold)); Text("78'").foregroundStyle(AppTheme.green).bold() }
-                Spacer()
-                team("الهلال", icon: "moon.stars.fill")
-            }
-            Divider().overlay(Color.white.opacity(0.1))
-            VStack(spacing: 12) {
-                stat("الاستحواذ", left: 58, right: 42)
-                stat("التسديدات", left: 14, right: 8)
-                stat("التسديدات على المرمى", left: 6, right: 3)
-            }
-        }.padding(18).background(AppTheme.card, in: RoundedRectangle(cornerRadius: 20)).padding(.horizontal, 16)
-    }
-    private func team(_ name: String, icon: String) -> some View { VStack(spacing: 8) { Image(systemName: icon).font(.system(size: 40)).foregroundStyle(AppTheme.green); Text(name).bold() } }
-    private func stat(_ title: String, left: Int, right: Int) -> some View {
-        VStack(spacing: 5) {
-            HStack { Text("\(left)%").font(.caption); Spacer(); Text(title).font(.caption).foregroundStyle(AppTheme.muted); Spacer(); Text("\(right)%").font(.caption) }
-            ProgressView(value: Double(left), total: Double(max(left + right, 1))).tint(AppTheme.green)
         }
+        .refreshable { await store.refresh() }
+        .task { if store.matches.isEmpty { await store.refresh() } }
+        .background(AppTheme.bg.ignoresSafeArea())
     }
-    private func matchRow(_ m: MatchItem) -> some View {
-        HStack { Text(m.home).bold(); Spacer(); Text(m.minute).foregroundStyle(AppTheme.muted); Spacer(); Text(m.away).bold() }
-            .padding(18).background(AppTheme.card, in: RoundedRectangle(cornerRadius: 16)).padding(.horizontal, 16)
+
+    private func matchCard(_ m: LiveMatch) -> some View {
+        VStack(spacing: 14) {
+            HStack {
+                Text(m.league).font(.caption.bold()).foregroundStyle(AppTheme.muted)
+                Spacer()
+                Text(m.status.isEmpty ? "اليوم" : m.status).font(.caption).foregroundStyle(AppTheme.green)
+            }
+            HStack(spacing: 12) {
+                VStack(spacing: 8) {
+                    RemoteBadge(url: m.homeBadge).frame(width: 48, height: 48)
+                    Text(m.home).font(.subheadline.bold()).multilineTextAlignment(.center).lineLimit(2)
+                }.frame(maxWidth: .infinity)
+
+                VStack(spacing: 6) {
+                    if let hs = m.homeScore, let ascore = m.awayScore {
+                        Text("\(hs) - \(ascore)").font(.system(size: 30, weight: .bold))
+                    } else {
+                        Text(m.time).font(.headline).foregroundStyle(AppTheme.green)
+                    }
+                }
+
+                VStack(spacing: 8) {
+                    RemoteBadge(url: m.awayBadge).frame(width: 48, height: 48)
+                    Text(m.away).font(.subheadline.bold()).multilineTextAlignment(.center).lineLimit(2)
+                }.frame(maxWidth: .infinity)
+            }
+        }
+        .padding(16)
+        .background(AppTheme.card, in: RoundedRectangle(cornerRadius: 18))
+        .padding(.horizontal, 16)
     }
 }
 
 struct NewsView: View {
+    @StateObject private var store = SportsStore.shared
     var body: some View {
         ScrollView {
             VStack(spacing: 14) {
                 TopBar(title: "الأخبار")
-                ForEach(MockData.news) { item in
-                    VStack(alignment: .leading, spacing: 10) {
-                        RoundedRectangle(cornerRadius: 14).fill(AppTheme.soft).frame(height: 150).overlay(Image(systemName: item.image).font(.system(size: 48)).foregroundStyle(AppTheme.green))
-                        Text(item.title).font(.headline)
-                        Text(item.subtitle).font(.subheadline).foregroundStyle(AppTheme.muted)
-                    }.padding(14).background(AppTheme.card, in: RoundedRectangle(cornerRadius: 18)).padding(.horizontal, 16)
+                if store.isLoading && store.news.isEmpty {
+                    ProgressView("جاري التحديث...").tint(AppTheme.green).foregroundStyle(.white).padding(.top, 60)
                 }
+                ForEach(store.news) { item in articleCard(item) }
             }.padding(.bottom, 24)
-        }.background(AppTheme.bg.ignoresSafeArea())
+        }
+        .refreshable { await store.refresh() }
+        .task { if store.news.isEmpty { await store.refresh() } }
+        .background(AppTheme.bg.ignoresSafeArea())
+    }
+
+    private func articleCard(_ item: RealArticle) -> some View {
+        Link(destination: item.url ?? URL(string: "https://news.google.com")!) {
+            VStack(alignment: .leading, spacing: 10) {
+                RoundedRectangle(cornerRadius: 14).fill(AppTheme.soft).frame(height: 120)
+                    .overlay(Image(systemName: "newspaper.fill").font(.system(size: 44)).foregroundStyle(AppTheme.green))
+                Text(item.title).font(.headline).foregroundStyle(.white).multilineTextAlignment(.leading)
+                HStack {
+                    Text(item.source.isEmpty ? "مصدر إخباري" : item.source)
+                    Spacer()
+                    Text(item.date, style: .relative)
+                }.font(.caption).foregroundStyle(AppTheme.muted)
+            }.padding(14).background(AppTheme.card, in: RoundedRectangle(cornerRadius: 18)).padding(.horizontal, 16)
+        }
     }
 }
 
 struct TransfersView: View {
     @State private var segment = "الكل"
+    @StateObject private var store = SportsStore.shared
+
     var body: some View {
         ScrollView {
             VStack(spacing: 14) {
                 TopBar(title: "مركز الانتقالات")
-                SegmentBar(items: ["الكل", "رسمي", "موثوق", "شائعات"], selected: $segment)
-                ForEach(MockData.transfers) { item in transferCard(item) }
+                SegmentBar(items: ["الكل", "آخر الأخبار", "السعودية"], selected: $segment)
+                if store.isLoading && store.transfers.isEmpty {
+                    ProgressView("جاري جلب أخبار الانتقالات...").tint(AppTheme.green).foregroundStyle(.white).padding(.top, 60)
+                }
+                ForEach(store.transfers) { item in transferCard(item) }
             }.padding(.bottom, 24)
-        }.background(AppTheme.bg.ignoresSafeArea())
+        }
+        .refreshable { await store.refresh() }
+        .task { if store.transfers.isEmpty { await store.refresh() } }
+        .background(AppTheme.bg.ignoresSafeArea())
     }
-    private func transferCard(_ item: TransferItem) -> some View {
-        HStack(spacing: 14) {
-            Circle().fill(AppTheme.soft).frame(width: 74, height: 74).overlay(Image(systemName: "person.crop.circle.fill").font(.system(size: 50)).foregroundStyle(AppTheme.green))
-            VStack(alignment: .leading, spacing: 6) {
-                Text(item.probability >= 65 ? "90+ VERIFY" : "مصدر موثوق").font(.caption2.bold()).foregroundStyle(item.probability >= 65 ? .black : .white).padding(.horizontal, 8).padding(.vertical, 4).background(item.probability >= 65 ? AppTheme.green : AppTheme.soft, in: Capsule())
-                Text(item.player).font(.headline)
-                Text("\(item.from)  ←  \(item.to)").font(.caption).foregroundStyle(AppTheme.muted)
-                Text(item.status).font(.caption2).foregroundStyle(AppTheme.green)
-                ProgressView(value: Double(item.probability), total: 100).tint(AppTheme.green)
+
+    private func transferCard(_ item: RealArticle) -> some View {
+        Link(destination: item.url ?? URL(string: "https://news.google.com")!) {
+            HStack(spacing: 14) {
+                Circle().fill(AppTheme.soft).frame(width: 70, height: 70)
+                    .overlay(Image(systemName: "arrow.left.arrow.right.circle.fill").font(.system(size: 38)).foregroundStyle(AppTheme.green))
+                VStack(alignment: .leading, spacing: 7) {
+                    Text("90+ TRANSFERS").font(.caption2.bold()).foregroundStyle(.black)
+                        .padding(.horizontal, 8).padding(.vertical, 4).background(AppTheme.green, in: Capsule())
+                    Text(item.title).font(.headline).foregroundStyle(.white).lineLimit(3)
+                    HStack {
+                        Text(item.source.isEmpty ? "مصدر إخباري" : item.source)
+                        Text("•")
+                        Text(item.date, style: .relative)
+                    }.font(.caption).foregroundStyle(AppTheme.muted)
+                }
+                Spacer()
             }
-            Text("\(item.probability)%").font(.headline)
-        }.padding(14).background(AppTheme.card, in: RoundedRectangle(cornerRadius: 18)).padding(.horizontal, 16)
+            .padding(14).background(AppTheme.card, in: RoundedRectangle(cornerRadius: 18)).padding(.horizontal, 16)
+        }
     }
 }
 
@@ -91,9 +144,9 @@ struct ProfileView: View {
         VStack(spacing: 18) {
             TopBar(title: "حسابي")
             Spacer()
-            Image(systemName: "person.crop.circle.fill").font(.system(size: 84)).foregroundStyle(AppTheme.green)
-            Text("مرحباً بك في 90+").font(.title2.bold())
-            Text("الإشعارات • المفضلة • الفرق التي تتابعها • الإعدادات").foregroundStyle(AppTheme.muted).multilineTextAlignment(.center).padding(.horizontal)
+            BrandLogo()
+            Text("90+ نايـنتي بلس").font(.title2.bold())
+            Text("الأخبار • مباريات اليوم • الانتقالات • مصادر مباشرة").foregroundStyle(AppTheme.muted).multilineTextAlignment(.center).padding(.horizontal)
             Spacer()
         }.background(AppTheme.bg.ignoresSafeArea())
     }
