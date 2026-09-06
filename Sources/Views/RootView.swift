@@ -11,7 +11,7 @@ struct RootView: View {
                 .tag(0)
                 .tabItem { Label("الرئيسية", systemImage: "house.fill") }
 
-            APIMatchesView()
+            V2MatchesView()
                 .tag(1)
                 .tabItem { Label("المباريات", systemImage: "soccerball") }
 
