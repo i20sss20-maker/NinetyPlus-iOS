@@ -23,7 +23,7 @@ struct RootView: View {
                 .tag(3)
                 .tabItem { Label("الأخبار", systemImage: "newspaper.fill") }
 
-            APIMoreView()
+            V2MoreView()
                 .tag(4)
                 .tabItem { Label("المزيد", systemImage: "square.grid.2x2.fill") }
         }
