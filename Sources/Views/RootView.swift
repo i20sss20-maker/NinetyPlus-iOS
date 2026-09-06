@@ -15,7 +15,7 @@ struct RootView: View {
                 .tag(1)
                 .tabItem { Label("المباريات", systemImage: "soccerball") }
 
-            NavigationStack { APIDiscoverView() }
+            V2DiscoverView()
                 .tag(2)
                 .tabItem { Label("البحث", systemImage: "magnifyingglass") }
 
