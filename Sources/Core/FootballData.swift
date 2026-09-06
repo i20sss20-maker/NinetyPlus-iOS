@@ -42,6 +42,22 @@ struct TeamProfile: Identifiable, Decodable, Hashable {
     let strWebsite: String?
 }
 
+struct TeamEvent: Identifiable, Decodable, Hashable {
+    var id: String { idEvent ?? "\(dateEvent ?? "")-\(strEvent ?? UUID().uuidString)" }
+    let idEvent: String?
+    let strEvent: String?
+    let strLeague: String?
+    let strHomeTeam: String?
+    let strAwayTeam: String?
+    let intHomeScore: String?
+    let intAwayScore: String?
+    let dateEvent: String?
+    let strTime: String?
+    let strStatus: String?
+    let strHomeTeamBadge: String?
+    let strAwayTeamBadge: String?
+}
+
 struct MatchStat: Identifiable, Decodable, Hashable {
     var id: String { idStatistic ?? "\(name)-\(home)-\(away)" }
     let idStatistic: String?
@@ -82,6 +98,7 @@ struct LineupPlayer: Identifiable, Decodable, Hashable {
 
 private struct TableResponse: Decodable { let table: [StandingRow]? }
 private struct TeamResponse: Decodable { let teams: [TeamProfile]? }
+private struct TeamEventsResponse: Decodable { let events: [TeamEvent]?; let results: [TeamEvent]? }
 private struct StatsResponse: Decodable { let eventstats: [MatchStat]? }
 private struct TimelineResponse: Decodable { let timeline: [TimelineEvent]? }
 private struct LineupResponse: Decodable { let lineup: [LineupPlayer]? }
@@ -116,6 +133,18 @@ enum FootballAPI {
         return response.teams?.first
     }
 
+    static func nextEvents(teamID: String) async throws -> [TeamEvent] {
+        let url = URL(string: "\(base)/eventsnext.php?id=\(teamID)")!
+        let response: TeamEventsResponse = try await get(url)
+        return response.events ?? response.results ?? []
+    }
+
+    static func lastEvents(teamID: String) async throws -> [TeamEvent] {
+        let url = URL(string: "\(base)/eventslast.php?id=\(teamID)")!
+        let response: TeamEventsResponse = try await get(url)
+        return response.results ?? response.events ?? []
+    }
+
     static func stats(eventID: String) async throws -> [MatchStat] {
         let url = URL(string: "\(base)/lookupeventstats.php?id=\(eventID)")!
         let response: StatsResponse = try await get(url)
@@ -137,7 +166,7 @@ enum FootballAPI {
     private static func get<T: Decodable>(_ url: URL) async throws -> T {
         var request = URLRequest(url: url)
         request.timeoutInterval = 15
-        request.setValue("NinetyPlus/1.0 iOS", forHTTPHeaderField: "User-Agent")
+        request.setValue("NinetyPlus/1.2 iOS", forHTTPHeaderField: "User-Agent")
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             throw URLError(.badServerResponse)
