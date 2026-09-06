@@ -5,6 +5,7 @@ struct MoreView: View {
     @AppStorage("notificationsEnabled") private var notificationsEnabled = false
     @AppStorage("favoriteLeague") private var favoriteLeague = "الدوري السعودي"
     @AppStorage("favoriteTeamIDs") private var favoriteTeamIDs = ""
+    @AppStorage("favoritePlayerIDs") private var favoritePlayerIDs = ""
     @State private var notificationStatus = ""
 
     var body: some View {
@@ -23,8 +24,12 @@ struct MoreView: View {
                     NavigationLink { DiscoverView() } label: { Label("البحث عن الأندية واللاعبين", systemImage: "magnifyingglass") }
                     NavigationLink { LeaguesView() } label: { Label("البطولات والترتيب", systemImage: "trophy.fill") }
                     NavigationLink { FavoriteTeamsView() } label: {
-                        HStack { Label("الفرق المفضلة", systemImage: "star.fill"); Spacer(); Text("\(favoriteCount)").foregroundStyle(.secondary) }
+                        HStack { Label("الفرق المفضلة", systemImage: "star.fill"); Spacer(); Text("\(favoriteTeamCount)").foregroundStyle(.secondary) }
                     }
+                    NavigationLink { FavoritePlayersView() } label: {
+                        HStack { Label("اللاعبون المفضلون", systemImage: "person.crop.circle.badge.checkmark"); Spacer(); Text("\(favoritePlayerCount)").foregroundStyle(.secondary) }
+                    }
+                    NavigationLink { PlayerCompareView() } label: { Label("مقارنة لاعبين", systemImage: "person.2.fill") }
                 }
                 Section("التفضيلات") {
                     Toggle("السماح بالإشعارات", isOn: Binding(get: { notificationsEnabled }, set: { value in
@@ -53,7 +58,8 @@ struct MoreView: View {
         }
     }
 
-    private var favoriteCount: Int { favoriteTeamIDs.split(separator: ",").count }
+    private var favoriteTeamCount: Int { favoriteTeamIDs.split(separator: ",").count }
+    private var favoritePlayerCount: Int { favoritePlayerIDs.split(separator: ",").count }
 
     @MainActor private func requestNotifications() async {
         do {
@@ -146,6 +152,13 @@ struct DiscoverView: View {
 
 struct PlayerDetailView: View {
     let player: PlayerProfile
+    @AppStorage("favoritePlayerIDs") private var favoritePlayerIDs = ""
+
+    private var isFavorite: Bool {
+        guard let id = player.idPlayer else { return false }
+        return Set(favoritePlayerIDs.split(separator: ",").map(String.init)).contains(id)
+    }
+
     var body: some View {
         ScrollView {
             VStack(spacing: 18) {
@@ -166,6 +179,13 @@ struct PlayerDetailView: View {
                         }
                     }.padding(16)
                 }.clipShape(RoundedRectangle(cornerRadius: 22))
+
+                HStack(spacing: 10) {
+                    playerChip("المركز", player.strPosition ?? "—", "figure.soccer")
+                    playerChip("الرقم", player.strNumber ?? "—", "number")
+                    playerChip("الجنسية", player.strNationality ?? "—", "flag.fill")
+                }
+
                 VStack(alignment: .leading, spacing: 12) {
                     detail("المركز", player.strPosition)
                     detail("الجنسية", player.strNationality)
@@ -175,15 +195,43 @@ struct PlayerDetailView: View {
                     detail("تاريخ الميلاد", player.dateBorn)
                     if let desc = player.strDescriptionEN, !desc.isEmpty {
                         Divider().overlay(Color.white.opacity(0.1))
-                        Text(desc).font(.subheadline).foregroundStyle(AppTheme.muted).lineLimit(10)
+                        Text(desc).font(.subheadline).foregroundStyle(AppTheme.muted).lineLimit(12)
                     }
                 }.frame(maxWidth: .infinity, alignment: .leading).padding(18).background(AppTheme.card, in: RoundedRectangle(cornerRadius: 18))
             }.padding(16)
-        }.background(AppTheme.bg.ignoresSafeArea()).navigationTitle(player.strPlayer ?? "اللاعب").navigationBarTitleDisplayMode(.inline)
+        }
+        .background(AppTheme.bg.ignoresSafeArea())
+        .navigationTitle(player.strPlayer ?? "اللاعب")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button(action: toggleFavorite) {
+                    Image(systemName: isFavorite ? "star.fill" : "star").foregroundStyle(AppTheme.green)
+                }.disabled(player.idPlayer == nil)
+            }
+        }
+    }
+
+    private func playerChip(_ title: String, _ value: String, _ icon: String) -> some View {
+        VStack(spacing: 6) {
+            Image(systemName: icon).foregroundStyle(AppTheme.green)
+            Text(value).font(.caption.bold()).lineLimit(1)
+            Text(title).font(.caption2).foregroundStyle(AppTheme.muted)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 12)
+        .background(AppTheme.card, in: RoundedRectangle(cornerRadius: 16))
     }
 
     private func detail(_ title: String, _ value: String?) -> some View {
         Group { if let value, !value.isEmpty { HStack { Text(title).foregroundStyle(AppTheme.muted); Spacer(); Text(value).bold() } } }
+    }
+
+    private func toggleFavorite() {
+        guard let id = player.idPlayer else { return }
+        var ids = Set(favoritePlayerIDs.split(separator: ",").map(String.init))
+        if ids.contains(id) { ids.remove(id) } else { ids.insert(id) }
+        favoritePlayerIDs = ids.sorted().joined(separator: ",")
     }
 }
 
@@ -218,11 +266,65 @@ struct FavoriteTeamsView: View {
         let ids = favoriteTeamIDs.split(separator: ",").map(String.init)
         var loaded: [TeamProfile] = []
         for id in ids.prefix(20) {
-            do {
-                if let team = try await FootballAPI.team(id: id) { loaded.append(team) }
-            } catch { }
+            do { if let team = try await FootballAPI.team(id: id) { loaded.append(team) } } catch { }
         }
         teams = loaded
+        loading = false
+    }
+}
+
+struct FavoritePlayersView: View {
+    @AppStorage("favoritePlayerIDs") private var favoritePlayerIDs = ""
+    @State private var players: [PlayerProfile] = []
+    @State private var loading = true
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 14) {
+                if loading {
+                    ProgressView("جاري تحميل اللاعبين...").tint(AppTheme.green).padding(.top, 60)
+                } else if players.isEmpty {
+                    ContentUnavailableView("لا يوجد لاعبون مفضلون", systemImage: "person.crop.circle.badge.plus", description: Text("أضف لاعبًا للمفضلة من صفحة اللاعب."))
+                        .padding(.top, 60)
+                } else {
+                    ForEach(players) { player in
+                        NavigationLink { PlayerDetailView(player: player) } label: {
+                            HStack(spacing: 12) {
+                                AsyncImage(url: (player.strCutout ?? player.strThumb).flatMap(URL.init(string:))) { phase in
+                                    if case .success(let image) = phase { image.resizable().scaledToFill() }
+                                    else { Image(systemName: "person.crop.circle.fill").resizable().foregroundStyle(AppTheme.green.opacity(0.7)) }
+                                }
+                                .frame(width: 52, height: 52)
+                                .clipShape(Circle())
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(player.strPlayer ?? "لاعب").font(.headline)
+                                    Text([player.strTeam, player.strPosition].compactMap { $0 }.joined(separator: " • ")).font(.caption).foregroundStyle(AppTheme.muted)
+                                }
+                                Spacer()
+                                Image(systemName: "chevron.left").foregroundStyle(AppTheme.muted)
+                            }
+                            .foregroundStyle(.white)
+                            .padding(14)
+                            .background(AppTheme.card, in: RoundedRectangle(cornerRadius: 18))
+                            .padding(.horizontal, 16)
+                        }.buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+        .background(AppTheme.bg.ignoresSafeArea())
+        .navigationTitle("اللاعبون المفضلون")
+        .task { await load() }
+    }
+
+    @MainActor private func load() async {
+        loading = true
+        let ids = favoritePlayerIDs.split(separator: ",").map(String.init)
+        var loaded: [PlayerProfile] = []
+        for id in ids.prefix(30) {
+            do { if let player = try await FootballAPI.player(id: id) { loaded.append(player) } } catch { }
+        }
+        players = loaded
         loading = false
     }
 }
