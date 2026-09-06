@@ -1,0 +1,48 @@
+name: Build unsigned IPA
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: macos-15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Build iPhone app
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project NinetyPlus.xcodeproj \
+            -scheme NinetyPlus \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            build
+
+      - name: Package unsigned IPA
+        run: |
+          rm -rf Payload NinetyPlus-unsigned.ipa
+          mkdir -p Payload
+          cp -R build/Build/Products/Release-iphoneos/NinetyPlus.app Payload/
+          zip -qry NinetyPlus-unsigned.ipa Payload
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: NinetyPlus-unsigned-IPA
+          path: NinetyPlus-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 30
