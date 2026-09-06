@@ -50,13 +50,13 @@ final class SportsStore: ObservableObject {
         guard !isLoading else { return }
         isLoading = true
         errorMessage = nil
-        async let m = fetchMatches()
+        async let m = fetchMatches(date: Date())
         async let n = fetchRSS(query: "كرة القدم السعودية OR دوري روشن OR الهلال OR النصر OR الاتحاد OR الأهلي")
         async let t = fetchRSS(query: "انتقالات الدوري السعودي OR Saudi Pro League transfers OR football transfers")
         let result = await (try? m, try? n, try? t)
 
         var changed = false
-        if let newMatches = result.0, !newMatches.isEmpty { matches = newMatches; changed = true }
+        if let newMatches = result.0 { matches = newMatches; changed = true }
         if let newNews = result.1, !newNews.isEmpty { news = dedupe(newNews); changed = true }
         if let newTransfers = result.2, !newTransfers.isEmpty { transfers = dedupe(newTransfers); changed = true }
 
@@ -69,18 +69,22 @@ final class SportsStore: ObservableObject {
         isLoading = false
     }
 
-    private func fetchMatches() async throws -> [LiveMatch] {
+    func matches(on date: Date) async throws -> [LiveMatch] {
+        try await fetchMatches(date: date)
+    }
+
+    private func fetchMatches(date: Date) async throws -> [LiveMatch] {
         let formatter = DateFormatter(); formatter.locale = Locale(identifier: "en_US_POSIX"); formatter.dateFormat = "yyyy-MM-dd"
-        let today = formatter.string(from: Date())
-        guard let url = URL(string: "https://www.thesportsdb.com/api/v1/json/123/eventsday.php?d=\(today)&s=Soccer") else { return [] }
+        let day = formatter.string(from: date)
+        guard let url = URL(string: "https://www.thesportsdb.com/api/v1/json/123/eventsday.php?d=\(day)&s=Soccer") else { return [] }
         var request = URLRequest(url: url); request.timeoutInterval = 15; request.cachePolicy = .reloadIgnoringLocalCacheData
-        request.setValue("NinetyPlus/1.0 iOS", forHTTPHeaderField: "User-Agent")
+        request.setValue("NinetyPlus/1.1 iOS", forHTTPHeaderField: "User-Agent")
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { throw URLError(.badServerResponse) }
         let decoded = try JSONDecoder().decode(EventDayResponse.self, from: data)
         let events = decoded.events ?? []
         let priority = events.sorted { scorePriority($0) > scorePriority($1) }
-        return priority.prefix(60).map { e in
+        return priority.prefix(100).map { e in
             LiveMatch(
                 id: e.idEvent ?? UUID().uuidString,
                 league: e.strLeague ?? "كرة القدم",
@@ -113,14 +117,14 @@ final class SportsStore: ObservableObject {
 
     private func displayTime(_ e: SportsEvent) -> String {
         if let time = e.strTime, !time.isEmpty { return String(time.prefix(5)) }
-        return "اليوم"
+        return "—"
     }
 
     private func fetchRSS(query: String) async throws -> [RealArticle] {
         guard let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
               let url = URL(string: "https://news.google.com/rss/search?q=\(encoded)&hl=ar&gl=SA&ceid=SA:ar") else { return [] }
         var request = URLRequest(url: url); request.timeoutInterval = 15; request.cachePolicy = .reloadIgnoringLocalCacheData
-        request.setValue("NinetyPlus/1.0 iOS", forHTTPHeaderField: "User-Agent")
+        request.setValue("NinetyPlus/1.1 iOS", forHTTPHeaderField: "User-Agent")
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { throw URLError(.badServerResponse) }
         return Array(RSSParser(data: data).parse().prefix(50))
