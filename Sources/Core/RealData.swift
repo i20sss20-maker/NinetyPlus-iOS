@@ -41,6 +41,7 @@ final class SportsStore: ObservableObject {
     @Published var isLoading = false
     @Published var errorMessage: String?
     @Published var lastUpdated: Date?
+    @Published var liveAlert: String?
 
     static let shared = SportsStore()
     private let cacheKey = "ninetyplus.sports.cache.v2"
@@ -56,7 +57,11 @@ final class SportsStore: ObservableObject {
         let result = await (try? m, try? n, try? t)
 
         var changed = false
-        if let newMatches = result.0 { matches = newMatches; changed = true }
+        if let newMatches = result.0 {
+            detectFollowedMatchChanges(old: matches, new: newMatches)
+            matches = newMatches
+            changed = true
+        }
         if let newNews = result.1, !newNews.isEmpty { news = dedupe(newNews); changed = true }
         if let newTransfers = result.2, !newTransfers.isEmpty { transfers = dedupe(newTransfers); changed = true }
 
@@ -70,7 +75,36 @@ final class SportsStore: ObservableObject {
     }
 
     func matches(on date: Date) async throws -> [LiveMatch] {
-        try await fetchMatches(date: date)
+        let fresh = try await fetchMatches(date: date)
+        if Calendar.current.isDateInToday(date) {
+            detectFollowedMatchChanges(old: matches, new: fresh)
+        }
+        return fresh
+    }
+
+    func clearLiveAlert() { liveAlert = nil }
+
+    private func detectFollowedMatchChanges(old: [LiveMatch], new: [LiveMatch]) {
+        let followed = Set(UserDefaults.standard.string(forKey: "followedMatchIDs")?.split(separator: ",").map(String.init) ?? [])
+        guard !followed.isEmpty, !old.isEmpty else { return }
+        let oldMap = Dictionary(uniqueKeysWithValues: old.map { ($0.id, $0) })
+
+        for match in new where followed.contains(match.id) {
+            guard let previous = oldMap[match.id] else { continue }
+            let before = "\(previous.homeScore ?? "-"):\(previous.awayScore ?? "-")"
+            let after = "\(match.homeScore ?? "-"):\(match.awayScore ?? "-")"
+            if before != after, match.homeScore != nil, match.awayScore != nil {
+                liveAlert = "⚽️ \(match.home) \(match.homeScore ?? "-") - \(match.awayScore ?? "-") \(match.away)"
+                return
+            }
+
+            let oldStatus = previous.status.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            let newStatus = match.status.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            if oldStatus != newStatus, (newStatus.contains("finished") || newStatus == "ft") {
+                liveAlert = "انتهت: \(match.home) \(match.homeScore ?? "-") - \(match.awayScore ?? "-") \(match.away)"
+                return
+            }
+        }
     }
 
     private func fetchMatches(date: Date) async throws -> [LiveMatch] {
@@ -78,13 +112,13 @@ final class SportsStore: ObservableObject {
         let day = formatter.string(from: date)
         guard let url = URL(string: "https://www.thesportsdb.com/api/v1/json/123/eventsday.php?d=\(day)&s=Soccer") else { return [] }
         var request = URLRequest(url: url); request.timeoutInterval = 15; request.cachePolicy = .reloadIgnoringLocalCacheData
-        request.setValue("NinetyPlus/1.1 iOS", forHTTPHeaderField: "User-Agent")
+        request.setValue("NinetyPlus/1.2 iOS", forHTTPHeaderField: "User-Agent")
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { throw URLError(.badServerResponse) }
         let decoded = try JSONDecoder().decode(EventDayResponse.self, from: data)
         let events = decoded.events ?? []
         let priority = events.sorted { scorePriority($0) > scorePriority($1) }
-        return priority.prefix(100).map { e in
+        return priority.prefix(120).map { e in
             LiveMatch(
                 id: e.idEvent ?? UUID().uuidString,
                 league: e.strLeague ?? "كرة القدم",
@@ -109,7 +143,7 @@ final class SportsStore: ObservableObject {
         let name = (e.strLeague ?? "").lowercased()
         let team = "\(e.strHomeTeam ?? "") \(e.strAwayTeam ?? "")".lowercased()
         var score = 0
-        if name.contains("saudi") || name.contains("champions") || name.contains("premier") || name.contains("laliga") || name.contains("serie a") || name.contains("bundesliga") { score += 8 }
+        if name.contains("saudi") || name.contains("champions") || name.contains("premier") || name.contains("laliga") || name.contains("serie a") || name.contains("bundesliga") || name.contains("ligue 1") { score += 8 }
         if team.contains("hilal") || team.contains("nassr") || team.contains("ittihad") || team.contains("ahli") { score += 10 }
         if e.intHomeScore != nil || e.intAwayScore != nil { score += 3 }
         return score
@@ -124,7 +158,7 @@ final class SportsStore: ObservableObject {
         guard let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
               let url = URL(string: "https://news.google.com/rss/search?q=\(encoded)&hl=ar&gl=SA&ceid=SA:ar") else { return [] }
         var request = URLRequest(url: url); request.timeoutInterval = 15; request.cachePolicy = .reloadIgnoringLocalCacheData
-        request.setValue("NinetyPlus/1.1 iOS", forHTTPHeaderField: "User-Agent")
+        request.setValue("NinetyPlus/1.2 iOS", forHTTPHeaderField: "User-Agent")
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { throw URLError(.badServerResponse) }
         return Array(RSSParser(data: data).parse().prefix(50))
