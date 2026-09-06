@@ -16,49 +16,80 @@ struct V2FavoritesView: View {
                     header("الأندية", teams.count)
                     ForEach(teams) { team in
                         NavigationLink { V2TeamView(team: team) } label: {
-                            HStack(spacing: 12) { RemoteBadge(url: team.logo).frame(width: 48, height: 48); VStack(alignment: .leading) { Text(team.name).font(.headline); Text(team.country ?? "").font(.caption).foregroundStyle(AppTheme.muted) }; Spacer(); Image(systemName: "chevron.left").foregroundStyle(AppTheme.muted) }
-                                .foregroundStyle(.white).padding(14).background(AppTheme.card, in: RoundedRectangle(cornerRadius: 18)).padding(.horizontal, 16)
-                        }.buttonStyle(.plain)
+                            HStack(spacing: 12) {
+                                RemoteBadge(url: team.logo).frame(width: 48, height: 48)
+                                VStack(alignment: .leading) {
+                                    Text(team.name).font(.headline)
+                                    Text(team.country ?? "").font(.caption).foregroundStyle(AppTheme.muted)
+                                }
+                                Spacer()
+                                Image(systemName: "chevron.left").foregroundStyle(AppTheme.muted)
+                            }
+                            .foregroundStyle(.white)
+                            .padding(14)
+                            .background(AppTheme.card, in: RoundedRectangle(cornerRadius: 18))
+                            .padding(.horizontal, 16)
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
                 if !players.isEmpty {
                     header("اللاعبون", players.count)
                     ForEach(players) { player in
                         NavigationLink { V2PlayerView(player: player) } label: {
-                            HStack(spacing: 12) { RemoteBadge(url: player.photo).frame(width: 48, height: 48); VStack(alignment: .leading) { Text(player.name).font(.headline); Text(player.nationality ?? "").font(.caption).foregroundStyle(AppTheme.muted) }; Spacer(); Image(systemName: "chevron.left").foregroundStyle(AppTheme.muted) }
-                                .foregroundStyle(.white).padding(14).background(AppTheme.card, in: RoundedRectangle(cornerRadius: 18)).padding(.horizontal, 16)
-                        }.buttonStyle(.plain)
+                            HStack(spacing: 12) {
+                                RemoteBadge(url: player.photo).frame(width: 48, height: 48)
+                                VStack(alignment: .leading) {
+                                    Text(player.name).font(.headline)
+                                    Text(player.nationality ?? "").font(.caption).foregroundStyle(AppTheme.muted)
+                                }
+                                Spacer()
+                                Image(systemName: "chevron.left").foregroundStyle(AppTheme.muted)
+                            }
+                            .foregroundStyle(.white)
+                            .padding(14)
+                            .background(AppTheme.card, in: RoundedRectangle(cornerRadius: 18))
+                            .padding(.horizontal, 16)
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
                 if !loading && teams.isEmpty && players.isEmpty {
                     ContentUnavailableView("ما تتابع أحد للحين", systemImage: "star", description: Text("تابع نادي أو لاعب وبيظهر هنا مباشرة"))
                         .padding(.top, 60)
                 }
-            }.padding(.bottom, 30)
+            }
+            .padding(.bottom, 30)
         }
         .background(AppTheme.bg.ignoresSafeArea())
         .task { await load() }
         .refreshable { await load() }
     }
 
-    private func header(_ title: String, _ count: Int) -> some View { HStack { Text(title).font(.title3.bold()); Spacer(); Text("\(count)").font(.caption).foregroundStyle(AppTheme.muted) }.padding(.horizontal, 16) }
+    private func header(_ title: String, _ count: Int) -> some View {
+        HStack {
+            Text(title).font(.title3.bold())
+            Spacer()
+            Text("\(count)").font(.caption).foregroundStyle(AppTheme.muted)
+        }
+        .padding(.horizontal, 16)
+    }
 
     @MainActor private func load() async {
-        loading = true; defer { loading = false }
+        loading = true
+        defer { loading = false }
         let teamIDs = favoriteTeamIDs.split(separator: ",").map(String.init)
         let playerIDs = favoritePlayerIDs.split(separator: ",").map(String.init)
         var loadedTeams: [APIPlusTeam] = []
         var loadedPlayers: [APIPlusPlayer] = []
+
         for id in teamIDs {
-            if let team = try? await APISportsStore.shared.team(id: id) {
-                loadedTeams.append(team)
-            }
+            if let team = try? await APISportsStore.shared.team(id: id) { loadedTeams.append(team) }
         }
         for id in playerIDs {
-            if let player = try? await APISportsStore.shared.player(id: id) {
-                loadedPlayers.append(player)
-            }
+            if let player = try? await APISportsStore.shared.player(id: id) { loadedPlayers.append(player) }
         }
+
         teams = loadedTeams
         players = loadedPlayers
     }
@@ -71,17 +102,33 @@ struct V2LeaguesListView: View {
                 TopBar(title: "البطولات")
                 ForEach(LeagueOption.featured) { league in
                     NavigationLink { V2LeagueHubView(league: league) } label: {
-                        HStack(spacing: 12) { Image(systemName: "trophy.fill").foregroundStyle(AppTheme.green).frame(width: 42, height: 42).background(AppTheme.green.opacity(0.12), in: RoundedRectangle(cornerRadius: 12)); VStack(alignment: .leading) { Text(league.arabicName).font(.headline); Text(league.englishName).font(.caption).foregroundStyle(AppTheme.muted) }; Spacer(); Image(systemName: "chevron.left").foregroundStyle(AppTheme.muted) }
-                            .foregroundStyle(.white).padding(14).background(AppTheme.card, in: RoundedRectangle(cornerRadius: 18)).padding(.horizontal, 16)
-                    }.buttonStyle(.plain)
+                        HStack(spacing: 12) {
+                            Image(systemName: "trophy.fill")
+                                .foregroundStyle(AppTheme.green)
+                                .frame(width: 42, height: 42)
+                                .background(AppTheme.green.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
+                            VStack(alignment: .leading) {
+                                Text(league.arabicName).font(.headline)
+                                Text(league.englishName).font(.caption).foregroundStyle(AppTheme.muted)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.left").foregroundStyle(AppTheme.muted)
+                        }
+                        .foregroundStyle(.white)
+                        .padding(14)
+                        .background(AppTheme.card, in: RoundedRectangle(cornerRadius: 18))
+                        .padding(.horizontal, 16)
+                    }
+                    .buttonStyle(.plain)
                 }
-            }.padding(.bottom, 30)
-        }.background(AppTheme.bg.ignoresSafeArea())
+            }
+            .padding(.bottom, 30)
+        }
+        .background(AppTheme.bg.ignoresSafeArea())
     }
 }
 
 struct V2MoreView: View {
-    @State private var showKey = false
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -91,16 +138,50 @@ struct V2MoreView: View {
                     NavigationLink { V2LeaguesListView() } label: { card("البطولات", "الترتيب والمباريات والهدافون", "trophy.fill") }
                     NavigationLink { EnhancedTransfersView() } label: { card("الانتقالات", "آخر أخبار سوق الانتقالات", "arrow.left.arrow.right") }
                     NavigationLink { V2DiscoverView() } label: { card("البحث", "ابحث عن نادي أو لاعب", "magnifyingglass") }
-                    Button { showKey = true } label: { card("بيانات التطبيق", APIFootballClient.hasKey ? "مفعلة" : "تحتاج تفعيل أثناء التطوير", "bolt.horizontal.circle.fill") }
-                }.padding(.bottom, 30)
+                    statusCard
+                }
+                .padding(.bottom, 30)
             }
             .background(AppTheme.bg.ignoresSafeArea())
-            .sheet(isPresented: $showKey) { APIKeySetupView() }
         }
     }
 
+    private var statusCard: some View {
+        HStack(spacing: 14) {
+            Image(systemName: APIFootballClient.isConfigured ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
+                .font(.title2)
+                .foregroundStyle(APIFootballClient.isConfigured ? AppTheme.green : .orange)
+                .frame(width: 48, height: 48)
+                .background((APIFootballClient.isConfigured ? AppTheme.green : Color.orange).opacity(0.12), in: RoundedRectangle(cornerRadius: 14))
+            VStack(alignment: .leading, spacing: 4) {
+                Text("حالة الخدمة").font(.headline).foregroundStyle(.white)
+                Text(APIFootballClient.isConfigured ? "متصل بمصدر البيانات" : "الخدمة الرياضية غير متاحة حاليًا")
+                    .font(.caption)
+                    .foregroundStyle(AppTheme.muted)
+            }
+            Spacer()
+        }
+        .padding(14)
+        .background(AppTheme.card, in: RoundedRectangle(cornerRadius: 18))
+        .padding(.horizontal, 16)
+    }
+
     private func card(_ title: String, _ subtitle: String, _ icon: String) -> some View {
-        HStack(spacing: 14) { Image(systemName: icon).font(.title2).foregroundStyle(AppTheme.green).frame(width: 48, height: 48).background(AppTheme.green.opacity(0.12), in: RoundedRectangle(cornerRadius: 14)); VStack(alignment: .leading, spacing: 4) { Text(title).font(.headline).foregroundStyle(.white); Text(subtitle).font(.caption).foregroundStyle(AppTheme.muted) }; Spacer(); Image(systemName: "chevron.left").foregroundStyle(AppTheme.muted) }
-            .padding(14).background(AppTheme.card, in: RoundedRectangle(cornerRadius: 18)).padding(.horizontal, 16)
+        HStack(spacing: 14) {
+            Image(systemName: icon)
+                .font(.title2)
+                .foregroundStyle(AppTheme.green)
+                .frame(width: 48, height: 48)
+                .background(AppTheme.green.opacity(0.12), in: RoundedRectangle(cornerRadius: 14))
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title).font(.headline).foregroundStyle(.white)
+                Text(subtitle).font(.caption).foregroundStyle(AppTheme.muted)
+            }
+            Spacer()
+            Image(systemName: "chevron.left").foregroundStyle(AppTheme.muted)
+        }
+        .padding(14)
+        .background(AppTheme.card, in: RoundedRectangle(cornerRadius: 18))
+        .padding(.horizontal, 16)
     }
 }
