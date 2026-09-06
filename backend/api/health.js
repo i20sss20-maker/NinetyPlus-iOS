@@ -1,8 +1,19 @@
-export default function handler(_req, res) {
+export default function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
-  res.status(200).json({
-    ok: true,
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+
+  if (req.method !== 'GET') {
+    res.setHeader('Allow', 'GET');
+    return res.status(405).json({ ok: false, error: 'method_not_allowed' });
+  }
+
+  const configured = Boolean(process.env.API_FOOTBALL_KEY);
+  res.status(configured ? 200 : 503).json({
+    ok: configured,
     service: 'ninetyplus-backend',
-    providerConfigured: Boolean(process.env.API_FOOTBALL_KEY)
+    version: '0.2',
+    providerConfigured: configured,
+    time: new Date().toISOString()
   });
 }
