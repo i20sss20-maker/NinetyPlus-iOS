@@ -20,12 +20,11 @@ struct APIPlusStanding: Identifiable, Hashable {
     let goalsAgainst: Int; let goalDifference: Int; let points: Int; let form: String?
 }
 struct APIPlusScorer: Identifiable, Hashable {
-    let id: String; let rank: Int; let playerID: String; let name: String; let photo: String?
+    let id: String; let season: Int; let rank: Int; let playerID: String; let name: String; let photo: String?
     let nationality: String?; let teamID: String?; let team: String; let teamLogo: String?
     let appearances: Int; let minutes: Int; let goals: Int; let assists: Int
 }
-/// The free plan supports the dated fixture endpoint, but not next/last queries.
-/// Date responses are shared across followed clubs instead of fetching per club.
+
 private actor SharedFixtureDays {
     static let shared = SharedFixtureDays()
     private struct Entry { let fetchedAt: Date; let fixtures: [APIFixture] }
@@ -63,7 +62,6 @@ private actor SharedFixtureDays {
         let today = calendar.startOfDay(for: Date())
         let offsets = next ? Array(0...7) : Array(-7...0)
         var result: [APIFixture] = []
-        // Three shared day requests at a time, regardless of the club count.
         for start in stride(from: 0, to: offsets.count, by: 3) {
             try Task.checkCancellation()
             let batch = Array(offsets[start..<min(start + 3, offsets.count)])
@@ -93,6 +91,11 @@ final class APISportsStore: ObservableObject {
     private var refreshBusy = false
     private var refreshedDay: String?
     private init() {}
+
+    private var seasonCandidates: [Int] {
+        let current = APIFootballClient.currentSeason
+        return [current, current - 1]
+    }
 
     func refreshToday(force: Bool = false) async {
         guard !refreshBusy, !Task.isCancelled else { return }
@@ -147,32 +150,54 @@ final class APISportsStore: ObservableObject {
                 goalsFor: r.all?.goals?.for ?? 0, goalsAgainst: r.all?.goals?.against ?? 0, goalDifference: r.goalsDiff ?? 0, points: points, form: r.form)
         }.sorted { $0.rank < $1.rank }
     }
+
     func topScorers(leagueID: String) async throws -> [APIPlusScorer] {
-        let envelope: APIEnvelope<[APITopScorerItem]> = try await APIFootballClient.get("players/topscorers", query: [
-            .init(name: "league", value: leagueID), .init(name: "season", value: String(APIFootballClient.currentSeason))
-        ])
-        return envelope.response.enumerated().map { index, item in
-            let stat = item.statistics.first
-            return APIPlusScorer(id: "\(leagueID)-\(item.player.id)", rank: index + 1, playerID: String(item.player.id),
-                name: item.player.name ?? "—", photo: item.player.photo, nationality: item.player.nationality,
-                teamID: stat?.team.id.map(String.init), team: stat?.team.name ?? "—", teamLogo: stat?.team.logo,
-                appearances: stat?.games?.appearances ?? 0, minutes: stat?.games?.minutes ?? 0, goals: stat?.goals?.total ?? 0, assists: stat?.goals?.assists ?? 0)
+        var lastError: Error?
+        for season in seasonCandidates {
+            do {
+                let envelope: APIEnvelope<[APITopScorerItem]> = try await APIFootballClient.get("players/topscorers", query: [
+                    .init(name: "league", value: leagueID), .init(name: "season", value: String(season))
+                ])
+                guard !envelope.response.isEmpty else { continue }
+                return envelope.response.enumerated().map { index, item in
+                    let stat = item.statistics.first
+                    return APIPlusScorer(id: "\(leagueID)-\(season)-\(item.player.id)", season: season, rank: index + 1,
+                        playerID: String(item.player.id), name: item.player.name ?? "—", photo: item.player.photo,
+                        nationality: item.player.nationality, teamID: stat?.team.id.map(String.init), team: stat?.team.name ?? "—",
+                        teamLogo: stat?.team.logo, appearances: stat?.games?.appearances ?? 0, minutes: stat?.games?.minutes ?? 0,
+                        goals: stat?.goals?.total ?? 0, assists: stat?.goals?.assists ?? 0)
+                }
+            } catch {
+                if error is CancellationError { throw error }
+                lastError = error
+            }
         }
+        if let lastError { throw lastError }
+        return []
     }
+
     func playerSeasonStats(playerID: String) async throws -> [APIPlusPlayerSeasonStat] {
-        let envelope: APIEnvelope<[APITopScorerItem]> = try await APIFootballClient.get("players", query: [
-            .init(name: "id", value: playerID), .init(name: "season", value: String(APIFootballClient.currentSeason))
-        ])
-        guard let item = envelope.response.first(where: { String($0.player.id) == playerID }) else { return [] }
-        return item.statistics.enumerated().map { index, stat in
-            APIPlusPlayerSeasonStat(playerID: playerID, index: index, statistic: stat)
+        var lastError: Error?
+        for season in seasonCandidates {
+            do {
+                let envelope: APIEnvelope<[APITopScorerItem]> = try await APIFootballClient.get("players", query: [
+                    .init(name: "id", value: playerID), .init(name: "season", value: String(season))
+                ])
+                guard let item = envelope.response.first(where: { String($0.player.id) == playerID }), !item.statistics.isEmpty else { continue }
+                return item.statistics.enumerated().map { index, stat in
+                    APIPlusPlayerSeasonStat(playerID: playerID, season: season, index: index, statistic: stat)
+                }
+            } catch {
+                if error is CancellationError { throw error }
+                lastError = error
+            }
         }
+        if let lastError { throw lastError }
+        return []
     }
 
     func searchTeams(_ text: String) async throws -> [APIPlusTeam] {
         var query = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        // Searching "Al Ittihad" omitted the Saudi club because its provider name
-        // contains a hyphen. Search the distinctive token, not its separator.
         if query.lowercased().hasPrefix("al ") || query.lowercased().hasPrefix("al-") { query = String(query.dropFirst(3)) }
         let envelope: APIEnvelope<[APITeamSearchItem]> = try await APIFootballClient.get("teams", query: [.init(name: "search", value: query)])
         return envelope.response.map { item in
