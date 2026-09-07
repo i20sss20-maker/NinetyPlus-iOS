@@ -3,6 +3,9 @@ import { randomUUID } from 'node:crypto';
 
 const API_BASE = 'https://v3.football.api-sports.io';
 const PORT = Number(process.env.PORT || 3000);
+const CACHE_LIMIT = 500;
+const responseCache = new Map();
+const inFlight = new Map();
 
 const ALLOWED_PATHS = new Set([
   'fixtures',
@@ -25,18 +28,23 @@ const ALLOWED_QUERY_KEYS = new Set([
 function cacheSeconds(path, query) {
   if (path === 'fixtures' && query.live) return 15;
   if (path === 'fixtures/events') return 15;
-  if (path === 'fixtures/statistics' || path === 'fixtures/lineups') return 30;
-  if (path === 'fixtures/headtohead') return 900;
-  if (path === 'fixtures' && query.date) return 45;
-  if (path === 'standings') return 300;
-  if (path === 'players/topscorers') return 300;
-  if (path === 'players' || path === 'players/profiles') return 900;
-  if (path === 'teams') return 3600;
-  return 60;
+  if (path === 'fixtures/statistics') return 20;
+  if (path === 'fixtures/lineups') return 600;
+  if (path === 'fixtures/headtohead') return 1800;
+  if (path === 'fixtures' && query.date) return 60;
+  if (path === 'standings') return 600;
+  if (path === 'players/topscorers') return 600;
+  if (path === 'players' || path === 'players/profiles') return 1800;
+  if (path === 'teams') return 21600;
+  return 120;
 }
 
 function sendJson(res, status, payload, extraHeaders = {}) {
   const body = JSON.stringify(payload);
+  sendBody(res, status, body, extraHeaders);
+}
+
+function sendBody(res, status, body, extraHeaders = {}) {
   res.writeHead(status, {
     'Content-Type': 'application/json; charset=utf-8',
     'Content-Length': Buffer.byteLength(body),
@@ -48,13 +56,9 @@ function sendJson(res, status, payload, extraHeaders = {}) {
   res.end(body);
 }
 
-async function handleFootball(req, res, url) {
-  const requestId = randomUUID();
-  const key = process.env.API_FOOTBALL_KEY;
-  if (!key) return sendJson(res, 503, { error: 'sports_provider_not_configured', requestId }, { 'Cache-Control': 'no-store' });
-
+function normalizeRequest(url) {
   const path = String(url.searchParams.get('path') || '').replace(/^\/+/, '');
-  if (!ALLOWED_PATHS.has(path)) return sendJson(res, 400, { error: 'unsupported_path', requestId }, { 'Cache-Control': 'no-store' });
+  if (!ALLOWED_PATHS.has(path)) return { error: 'unsupported_path' };
 
   const upstream = new URL(`${API_BASE}/${path}`);
   const safeQuery = {};
@@ -66,44 +70,130 @@ async function handleFootball(req, res, url) {
     safeQuery[name] = text;
   }
 
+  upstream.searchParams.sort();
+  return {
+    path,
+    safeQuery,
+    upstream,
+    cacheKey: `${path}?${upstream.searchParams.toString()}`
+  };
+}
+
+function getCached(cacheKey) {
+  const entry = responseCache.get(cacheKey);
+  if (!entry) return null;
+  if (entry.expiresAt <= Date.now()) return null;
+  entry.lastAccess = Date.now();
+  return entry;
+}
+
+function getStale(cacheKey) {
+  const entry = responseCache.get(cacheKey);
+  if (!entry) return null;
+  const maxStaleMs = Math.max(entry.ttl * 3, 60) * 1000;
+  if (Date.now() - entry.expiresAt > maxStaleMs) return null;
+  return entry;
+}
+
+function putCache(cacheKey, result, ttl) {
+  if (responseCache.size >= CACHE_LIMIT && !responseCache.has(cacheKey)) {
+    const oldest = [...responseCache.entries()].sort((a, b) => a[1].lastAccess - b[1].lastAccess)[0];
+    if (oldest) responseCache.delete(oldest[0]);
+  }
+  responseCache.set(cacheKey, {
+    ...result,
+    ttl,
+    expiresAt: Date.now() + ttl * 1000,
+    lastAccess: Date.now()
+  });
+}
+
+async function fetchProvider(upstream, key, requestId) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 12000);
-
   try {
     const response = await fetch(upstream, {
       signal: controller.signal,
       headers: {
         'x-apisports-key': key,
-        'accept': 'application/json',
-        'user-agent': 'NinetyPlus-Backend/0.3 Railway'
+        accept: 'application/json',
+        'user-agent': 'NinetyPlus-Backend/0.4 Railway'
       }
     });
-
     const body = await response.text();
-    const ttl = cacheSeconds(path, safeQuery);
-    const headers = {
-      'Content-Type': 'application/json; charset=utf-8',
-      'X-90Plus-Request-ID': requestId,
-      'X-90Plus-Source': 'api-football',
-      'X-Content-Type-Options': 'nosniff',
-      'Referrer-Policy': 'no-referrer',
-      'Access-Control-Allow-Origin': '*',
-      'Cache-Control': response.ok ? `public, max-age=${ttl}, stale-while-revalidate=${Math.max(ttl * 3, 60)}` : 'no-store'
+    return {
+      status: response.status,
+      ok: response.ok,
+      body,
+      remaining: response.headers.get('x-ratelimit-requests-remaining')
     };
-    const remaining = response.headers.get('x-ratelimit-requests-remaining');
-    if (remaining) headers['X-90Plus-Provider-Remaining'] = remaining;
-
-    res.writeHead(response.status, headers);
-    res.end(body);
   } catch (error) {
     const timedOut = error?.name === 'AbortError';
-    console.error('football proxy failed', { requestId, path, timedOut, message: error?.message });
-    sendJson(res, timedOut ? 504 : 502, {
-      error: timedOut ? 'sports_provider_timeout' : 'sports_provider_unavailable',
-      requestId
-    }, { 'Cache-Control': 'no-store', 'X-90Plus-Request-ID': requestId });
+    console.error('football provider failed', { requestId, timedOut, message: error?.message });
+    throw Object.assign(error, { timedOut });
   } finally {
     clearTimeout(timeout);
+  }
+}
+
+async function handleFootball(req, res, url) {
+  const requestId = randomUUID();
+  const key = process.env.API_FOOTBALL_KEY;
+  if (!key) return sendJson(res, 503, { error: 'sports_provider_not_configured', requestId }, { 'Cache-Control': 'no-store' });
+
+  const normalized = normalizeRequest(url);
+  if (normalized.error) return sendJson(res, 400, { error: normalized.error, requestId }, { 'Cache-Control': 'no-store' });
+
+  const { path, safeQuery, upstream, cacheKey } = normalized;
+  const ttl = cacheSeconds(path, safeQuery);
+  const cached = getCached(cacheKey);
+
+  if (cached) {
+    return sendBody(res, cached.status, cached.body, {
+      'Cache-Control': `public, max-age=${ttl}, stale-while-revalidate=${Math.max(ttl * 3, 60)}`,
+      'X-90Plus-Request-ID': requestId,
+      'X-90Plus-Source': 'api-football',
+      'X-90Plus-Cache': 'HIT'
+    });
+  }
+
+  try {
+    let promise = inFlight.get(cacheKey);
+    if (!promise) {
+      promise = fetchProvider(upstream, key, requestId);
+      inFlight.set(cacheKey, promise);
+    }
+
+    const result = await promise;
+    inFlight.delete(cacheKey);
+
+    if (result.ok) putCache(cacheKey, result, ttl);
+
+    const headers = {
+      'Cache-Control': result.ok ? `public, max-age=${ttl}, stale-while-revalidate=${Math.max(ttl * 3, 60)}` : 'no-store',
+      'X-90Plus-Request-ID': requestId,
+      'X-90Plus-Source': 'api-football',
+      'X-90Plus-Cache': 'MISS'
+    };
+    if (result.remaining) headers['X-90Plus-Provider-Remaining'] = result.remaining;
+
+    return sendBody(res, result.status, result.body, headers);
+  } catch (error) {
+    inFlight.delete(cacheKey);
+    const stale = getStale(cacheKey);
+    if (stale) {
+      return sendBody(res, stale.status, stale.body, {
+        'Cache-Control': 'no-store',
+        'X-90Plus-Request-ID': requestId,
+        'X-90Plus-Source': 'api-football',
+        'X-90Plus-Cache': 'STALE'
+      });
+    }
+
+    return sendJson(res, error?.timedOut ? 504 : 502, {
+      error: error?.timedOut ? 'sports_provider_timeout' : 'sports_provider_unavailable',
+      requestId
+    }, { 'Cache-Control': 'no-store', 'X-90Plus-Request-ID': requestId });
   }
 }
 
@@ -127,9 +217,11 @@ const server = http.createServer(async (req, res) => {
     return sendJson(res, configured ? 200 : 503, {
       ok: configured,
       service: 'ninetyplus-backend',
-      version: '0.3',
+      version: '0.4',
       platform: 'railway',
       providerConfigured: configured,
+      cacheEntries: responseCache.size,
+      inFlightRequests: inFlight.size,
       time: new Date().toISOString()
     }, { 'Cache-Control': 'no-store' });
   }
