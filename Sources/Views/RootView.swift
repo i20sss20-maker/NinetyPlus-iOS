@@ -2,6 +2,7 @@ import SwiftUI
 
 struct RootView: View {
     @Environment(\.scenePhase) private var scenePhase
+    @StateObject private var network = NetworkStatus.shared
     @State private var selection = 0
 
     var body: some View {
@@ -29,7 +30,27 @@ struct RootView: View {
         .tint(AppTheme.green)
         .background(AppTheme.bg.ignoresSafeArea())
         .environment(\.layoutDirection, .rightToLeft)
-        .task { await refreshNow() }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if !network.isOnline {
+                HStack(spacing: 9) {
+                    Image(systemName: "wifi.slash")
+                    Text("لا يوجد اتصال بالإنترنت — سنعرض آخر بيانات متاحة")
+                        .font(.caption.bold())
+                        .lineLimit(1)
+                    Spacer(minLength: 0)
+                }
+                .foregroundStyle(.white)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 9)
+                .background(Color.orange.opacity(0.92))
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
+        .animation(.easeInOut(duration: 0.22), value: network.isOnline)
+        .task {
+            network.start()
+            await refreshNow()
+        }
         .task(id: scenePhase) {
             guard scenePhase == .active else { return }
             await refreshNow()
@@ -42,7 +63,7 @@ struct RootView: View {
     }
 
     @MainActor private func refreshNow() async {
-        guard APIFootballClient.isConfigured else { return }
+        guard network.isOnline, APIFootballClient.isConfigured else { return }
         await APISportsStore.shared.refreshToday(force: true)
     }
 }
