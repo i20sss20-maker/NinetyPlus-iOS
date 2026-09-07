@@ -11,7 +11,7 @@ struct APICompactMatchCard: View {
                     .foregroundStyle(AppTheme.muted)
                     .lineLimit(1)
                 Spacer()
-                Text(statusText)
+                Text(MatchLivePolicy.statusText(match.status, elapsed: match.elapsed))
                     .font(.caption.bold())
                     .foregroundStyle(isLive ? AppTheme.green : AppTheme.muted)
             }
@@ -21,17 +21,15 @@ struct APICompactMatchCard: View {
                 Spacer()
                 VStack(spacing: 4) {
                     if !FixturePhase.isUpcoming(match.status), let home = match.homeScore, let away = match.awayScore {
-                        Text("\(home) - \(away)")
-                            .font(.title2.bold())
+                        Text("\(home) - \(away)").font(.title2.bold()).monospacedDigit()
                     } else if let date = match.date {
-                        Text(date, style: .time)
-                            .font(.headline)
-                            .foregroundStyle(AppTheme.green)
+                        Text(date, style: .time).font(.headline).foregroundStyle(AppTheme.green)
+                    } else {
+                        Text("—").font(.headline)
                     }
-                    if let elapsed = match.elapsed, isLive {
-                        Text("\(elapsed)′")
-                            .font(.caption2.bold())
-                            .foregroundStyle(AppTheme.green)
+                    if let date = match.date, !Calendar.current.isDateInToday(date) {
+                        Text(date.formatted(date: .abbreviated, time: .omitted))
+                            .font(.caption2).foregroundStyle(AppTheme.muted)
                     }
                 }
                 Spacer()
@@ -45,8 +43,6 @@ struct APICompactMatchCard: View {
     }
 
     private var isLive: Bool { MatchLivePolicy.isLive(match.status) }
-
-    private var statusText: String { MatchLivePolicy.statusText(match.status, elapsed: nil) }
 
     private func team(_ name: String, _ logo: String?) -> some View {
         VStack(spacing: 5) {

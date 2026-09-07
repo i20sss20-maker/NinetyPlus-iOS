@@ -30,6 +30,27 @@ jobs:
           swiftc -swift-version 5 -parse-as-library Sources/Core/PageResource.swift Sources/Core/MatchCenterProgress.swift Tests/MatchCenterProgressTests.swift -o /tmp/ninetyplus-match-tests
           /tmp/ninetyplus-match-tests
 
+      - name: Test For You loading and match selection
+        run: |
+          swiftc -swift-version 5 -parse-as-library Sources/Core/PageResource.swift Sources/Core/ForYouProgress.swift Tests/ForYouProgressTests.swift -o /tmp/ninetyplus-for-you-tests
+          /tmp/ninetyplus-for-you-tests
+
+      - name: Test service probe safeguards
+        run: python3 -m unittest discover -s Tests -p 'test_service_probe.py' -v
+
+      - name: Read-only production search probe (maximum two football requests)
+        continue-on-error: true
+        run: python3 scripts/probe_service.py
+
+      - name: Upload service probe report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: NinetyPlus-Service-Probe
+          path: /tmp/ninetyplus-service-probe.json
+          if-no-files-found: ignore
+          retention-days: 7
+
       - name: Install XcodeGen
         run: brew install xcodegen
 

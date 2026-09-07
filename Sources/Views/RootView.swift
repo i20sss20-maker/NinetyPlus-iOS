@@ -47,16 +47,14 @@ struct RootView: View {
             }
         }
         .animation(.easeInOut(duration: 0.22), value: network.isOnline)
-        .task {
-            network.start()
-            await refreshNow()
-        }
-        .task(id: scenePhase) {
-            guard scenePhase == .active else { return }
+        .task { network.start() }
+        // One foreground loop, restarted immediately when connectivity returns.
+        .task(id: "\(scenePhase == .active):\(network.isOnline)") {
+            guard scenePhase == .active, network.isOnline else { return }
             await refreshNow()
             while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(60))
-                guard !Task.isCancelled else { break }
+                do { try await Task.sleep(for: .seconds(60)) } catch { return }
+                guard !Task.isCancelled else { return }
                 await refreshNow()
             }
         }
