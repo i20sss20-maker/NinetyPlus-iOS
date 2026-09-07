@@ -5,8 +5,14 @@ struct EnhancedNewsView: View {
     @State private var query = ""
     @State private var filter = "الكل"
 
+    private var validNews: [RealArticle] {
+        store.news.filter { article in
+            !article.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && article.url != nil
+        }
+    }
+
     private var filtered: [RealArticle] {
-        let searched = query.isEmpty ? store.news : store.news.filter {
+        let searched = query.isEmpty ? validNews : validNews.filter {
             $0.title.localizedCaseInsensitiveContains(query) ||
             $0.source.localizedCaseInsensitiveContains(query)
         }
@@ -24,7 +30,7 @@ struct EnhancedNewsView: View {
         case "الأحدث":
             return searched.sorted { $0.date > $1.date }
         default:
-            return searched
+            return searched.sorted { $0.date > $1.date }
         }
     }
 
@@ -36,9 +42,10 @@ struct EnhancedNewsView: View {
             ScrollView {
                 VStack(spacing: 16) {
                     TopBar(title: "الأخبار")
+                    sourceStatus
                     filters
 
-                    if store.isLoading && store.news.isEmpty {
+                    if store.isLoading && validNews.isEmpty {
                         ProgressView("جاري جلب أحدث الأخبار...")
                             .tint(AppTheme.green)
                             .padding(.top, 80)
@@ -49,18 +56,44 @@ struct EnhancedNewsView: View {
                             articleRow(article)
                         }
                     } else {
-                        ContentUnavailableView("لا توجد أخبار", systemImage: "newspaper", description: Text("جرّب تغيير البحث أو التصفية."))
-                            .foregroundStyle(.white)
-                            .padding(.top, 70)
+                        ContentUnavailableView(
+                            "لا توجد أخبار موثوقة متاحة الآن",
+                            systemImage: "newspaper",
+                            description: Text(store.errorMessage ?? "جرّب التحديث بعد قليل.")
+                        )
+                        .foregroundStyle(.white)
+                        .padding(.top, 70)
                     }
                 }
                 .padding(.bottom, 28)
             }
             .searchable(text: $query, prompt: "ابحث في الأخبار والمصادر")
             .refreshable { await store.refresh() }
-            .task { if store.news.isEmpty { await store.refresh() } }
+            .task { await store.refreshIfStale(maxAge: 180) }
             .background(AppTheme.bg.ignoresSafeArea())
         }
+    }
+
+    private var sourceStatus: some View {
+        HStack(spacing: 10) {
+            Image(systemName: store.errorMessage == nil ? "checkmark.shield.fill" : "clock.arrow.circlepath")
+                .foregroundStyle(AppTheme.green)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(store.errorMessage == nil ? "أخبار من مصادر فعلية" : "نعرض آخر أخبار محفوظة")
+                    .font(.caption.bold())
+                    .foregroundStyle(.white)
+                if let lastUpdated = store.lastUpdated {
+                    Text("آخر تحديث \(lastUpdated.formatted(date: .omitted, time: .shortened))")
+                        .font(.caption2)
+                        .foregroundStyle(AppTheme.muted)
+                }
+            }
+            Spacer()
+            if store.isLoading { ProgressView().tint(AppTheme.green).scaleEffect(0.8) }
+        }
+        .padding(12)
+        .background(AppTheme.card, in: RoundedRectangle(cornerRadius: 16))
+        .padding(.horizontal, 16)
     }
 
     private var filters: some View {
@@ -95,84 +128,94 @@ struct EnhancedNewsView: View {
     }
 
     private func heroCard(_ article: RealArticle) -> some View {
-        Link(destination: article.url ?? URL(string: "https://news.google.com")!) {
-            ZStack(alignment: .bottomLeading) {
-                LinearGradient(colors: [AppTheme.card, AppTheme.green.opacity(0.22)], startPoint: .topTrailing, endPoint: .bottomLeading)
-                    .frame(height: 240)
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack(spacing: 8) {
-                        Image(systemName: "bolt.fill").foregroundStyle(.black)
-                        Text("أبرز خبر").font(.caption.bold()).foregroundStyle(.black)
-                    }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(AppTheme.green, in: Capsule())
-
-                    Spacer()
-
-                    Text(article.title)
-                        .font(.title3.bold())
-                        .foregroundStyle(.white)
-                        .multilineTextAlignment(.leading)
-                        .lineLimit(4)
-
-                    HStack {
-                        Label(article.source.isEmpty ? "مصدر إخباري" : article.source, systemImage: "checkmark.seal.fill")
-                            .font(.caption.bold())
-                            .foregroundStyle(AppTheme.green)
-                        Spacer()
-                        Text(article.date, style: .relative)
-                            .font(.caption2)
-                            .foregroundStyle(AppTheme.muted)
-                    }
+        Group {
+            if let url = article.url {
+                Link(destination: url) {
+                    heroContent(article)
                 }
-                .padding(18)
+                .buttonStyle(.plain)
             }
-            .clipShape(RoundedRectangle(cornerRadius: 24))
-            .overlay(RoundedRectangle(cornerRadius: 24).stroke(AppTheme.green.opacity(0.18), lineWidth: 1))
-            .padding(.horizontal, 16)
         }
-        .buttonStyle(.plain)
     }
 
-    private func articleRow(_ article: RealArticle) -> some View {
-        Link(destination: article.url ?? URL(string: "https://news.google.com")!) {
-            HStack(alignment: .top, spacing: 13) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 14).fill(AppTheme.green.opacity(0.12))
-                    Image(systemName: icon(for: article.title))
-                        .font(.title3.bold())
-                        .foregroundStyle(AppTheme.green)
+    private func heroContent(_ article: RealArticle) -> some View {
+        ZStack(alignment: .bottomLeading) {
+            LinearGradient(colors: [AppTheme.card, AppTheme.green.opacity(0.22)], startPoint: .topTrailing, endPoint: .bottomLeading)
+                .frame(height: 240)
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 8) {
+                    Image(systemName: "bolt.fill").foregroundStyle(.black)
+                    Text("أبرز خبر").font(.caption.bold()).foregroundStyle(.black)
                 }
-                .frame(width: 58, height: 58)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(AppTheme.green, in: Capsule())
 
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(article.title)
-                        .font(.headline)
-                        .foregroundStyle(.white)
-                        .multilineTextAlignment(.leading)
-                        .lineLimit(3)
+                Spacer()
 
-                    HStack(spacing: 7) {
-                        Text(article.source.isEmpty ? "مصدر إخباري" : article.source)
-                            .font(.caption.bold())
-                            .foregroundStyle(AppTheme.green)
-                            .lineLimit(1)
-                        Text("•").foregroundStyle(AppTheme.muted)
-                        Text(article.date, style: .relative)
-                            .font(.caption2)
-                            .foregroundStyle(AppTheme.muted)
-                        Spacer()
-                        Image(systemName: "arrow.up.right.square")
-                            .foregroundStyle(AppTheme.muted)
-                    }
+                Text(article.title)
+                    .font(.title3.bold())
+                    .foregroundStyle(.white)
+                    .multilineTextAlignment(.leading)
+                    .lineLimit(4)
+
+                HStack {
+                    Label(article.source.isEmpty ? "مصدر إخباري" : article.source, systemImage: "link.circle.fill")
+                        .font(.caption.bold())
+                        .foregroundStyle(AppTheme.green)
+                    Spacer()
+                    Text(article.date, style: .relative)
+                        .font(.caption2)
+                        .foregroundStyle(AppTheme.muted)
                 }
             }
-            .padding(14)
-            .background(AppTheme.card, in: RoundedRectangle(cornerRadius: 18))
-            .padding(.horizontal, 16)
+            .padding(18)
         }
-        .buttonStyle(.plain)
+        .clipShape(RoundedRectangle(cornerRadius: 24))
+        .overlay(RoundedRectangle(cornerRadius: 24).stroke(AppTheme.green.opacity(0.18), lineWidth: 1))
+        .padding(.horizontal, 16)
+    }
+
+    @ViewBuilder private func articleRow(_ article: RealArticle) -> some View {
+        if let url = article.url {
+            Link(destination: url) {
+                HStack(alignment: .top, spacing: 13) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 14).fill(AppTheme.green.opacity(0.12))
+                        Image(systemName: icon(for: article.title))
+                            .font(.title3.bold())
+                            .foregroundStyle(AppTheme.green)
+                    }
+                    .frame(width: 58, height: 58)
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(article.title)
+                            .font(.headline)
+                            .foregroundStyle(.white)
+                            .multilineTextAlignment(.leading)
+                            .lineLimit(3)
+
+                        HStack(spacing: 7) {
+                            Text(article.source.isEmpty ? "مصدر إخباري" : article.source)
+                                .font(.caption.bold())
+                                .foregroundStyle(AppTheme.green)
+                                .lineLimit(1)
+                            Text("•").foregroundStyle(AppTheme.muted)
+                            Text(article.date, style: .relative)
+                                .font(.caption2)
+                                .foregroundStyle(AppTheme.muted)
+                            Spacer()
+                            Image(systemName: "arrow.up.right.square")
+                                .foregroundStyle(AppTheme.muted)
+                        }
+                    }
+                }
+                .padding(14)
+                .background(AppTheme.card, in: RoundedRectangle(cornerRadius: 18))
+                .padding(.horizontal, 16)
+            }
+            .buttonStyle(.plain)
+        }
     }
 
     private func icon(for title: String) -> String {
