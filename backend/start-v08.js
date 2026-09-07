@@ -11,6 +11,14 @@ function replaceOnce(oldText, newText, label) {
 
 s = s.replaceAll('NinetyPlus-Backend/0.7', 'NinetyPlus-Backend/0.8');
 
+// Broaden the free, no-key continuity layer. Unknown/unsupported ESPN league
+// codes fail independently and are ignored by espnFixtures()' allSettled logic.
+replaceOnce(
+  "  { code:'afc.champions', apiFootballID:'17', name:'AFC Champions League' }\n];",
+  "  { code:'afc.champions', apiFootballID:'17', name:'AFC Champions League' },\n  { code:'eng.2', apiFootballID:'40', name:'EFL Championship' },\n  { code:'ned.1', apiFootballID:'88', name:'Eredivisie' },\n  { code:'por.1', apiFootballID:'94', name:'Primeira Liga' },\n  { code:'tur.1', apiFootballID:'203', name:'Turkish Super Lig' },\n  { code:'sco.1', apiFootballID:'179', name:'Scottish Premiership' },\n  { code:'bel.1', apiFootballID:'144', name:'Belgian Pro League' },\n  { code:'usa.1', apiFootballID:'253', name:'Major League Soccer' },\n  { code:'mex.1', apiFootballID:'262', name:'Liga MX' },\n  { code:'bra.1', apiFootballID:'71', name:'Brazil Serie A' },\n  { code:'arg.1', apiFootballID:'128', name:'Argentina Liga Profesional' },\n  { code:'jpn.1', apiFootballID:'98', name:'J1 League' }\n];",
+  'expanded ESPN league coverage'
+);
+
 replaceOnce(
   "function noteProviderRequest() { resetProviderBudgetIfNeeded(); providerRequestsToday += 1; }",
   "function noteProviderRequest() { resetProviderBudgetIfNeeded(); providerRequestsToday += 1; }\nfunction providerBudgetRemaining() { resetProviderBudgetIfNeeded(); return Math.max(0, PROVIDER_DAILY_BUDGET - providerRequestsToday); }",
@@ -29,6 +37,15 @@ replaceOnce(
   'normalized venue officials'
 );
 
+// A valid match day with no returned games is not an outage. This matters when
+// the API-Football daily allowance is exhausted but ESPN legitimately has no
+// events for the selected day. Return [] and expose provider state in metadata.
+replaceOnce(
+  "  if (!matches.length && apiError) throw apiError;\n  const payload={date,timezone:'UTC',generatedAt:new Date().toISOString(),matches,meta:{apiFootballCount:api.length,espnCount:espn.length,canonicalCount:matches.length,providerBudgetRemaining:Math.max(0,PROVIDER_DAILY_BUDGET-providerRequestsToday)}};",
+  "  if (!matches.length && apiError) console.warn('canonical fixture primary unavailable',{date,message:apiError?.message});\n  const payload={date,timezone:'UTC',generatedAt:new Date().toISOString(),matches,meta:{apiFootballCount:api.length,espnCount:espn.length,canonicalCount:matches.length,providerBudgetRemaining:providerBudgetRemaining(),primaryUnavailable:Boolean(apiError),emptyDay:matches.length===0}};",
+  'empty day is valid'
+);
+
 replaceOnce(
 `async function apiMatchDetail(match) {\n  const id=match?.providerIds?.apiFootball; if(!id) return null;\n  const [events,statistics,lineups]=await Promise.allSettled([\n    apiFootballJSON('fixtures/events',{fixture:id}),apiFootballJSON('fixtures/statistics',{fixture:id}),apiFootballJSON('fixtures/lineups',{fixture:id})\n  ]);\n  return {\n    events:events.status==='fulfilled'?(events.value.response||[]):[],\n    statistics:statistics.status==='fulfilled'?(statistics.value.response||[]):[],\n    lineups:lineups.status==='fulfilled'?(lineups.value.response||[]):[],source:'api-football'\n  };\n}`,
 `async function apiMatchDetail(match, needs={events:true,statistics:true,lineups:true}) {\n  const id=match?.providerIds?.apiFootball; if(!id || providerBudgetRemaining() <= 0) return null;\n  const result={events:[],statistics:[],lineups:[],source:'api-football'};\n  const jobs=[];\n  if (needs.events && providerBudgetRemaining() > jobs.length) jobs.push(['events','fixtures/events']);\n  if (needs.statistics && providerBudgetRemaining() > jobs.length) jobs.push(['statistics','fixtures/statistics']);\n  if (needs.lineups && providerBudgetRemaining() > jobs.length) jobs.push(['lineups','fixtures/lineups']);\n  const settled=await Promise.allSettled(jobs.map(([,path])=>apiFootballJSON(path,{fixture:id})));\n  settled.forEach((entry,index)=>{ if(entry.status==='fulfilled') result[jobs[index][0]]=entry.value.response||[]; });\n  return result;\n}`,
@@ -43,7 +60,7 @@ replaceOnce(
 
 replaceOnce(
   "return sendJson(res,200,{ok:true,service:'ninetyplus-backend',version:'0.7'",
-  "return sendJson(res,200,{ok:true,service:'ninetyplus-backend',version:'0.8'",
+  "return sendJson(res,200,{ok:true,service:'ninetyplus-backend',version:'0.8.1'",
   'health version'
 );
 
@@ -53,7 +70,7 @@ replaceOnce(
   'match date forwarding'
 );
 
-s = s.replace("90+ backend v0.7 listening", "90+ backend v0.8 listening");
+s = s.replace("90+ backend v0.7 listening", "90+ backend v0.8.1 listening");
 
 const generated = new URL('./.generated-server-v08.js', import.meta.url);
 await writeFile(generated, s, 'utf8');
