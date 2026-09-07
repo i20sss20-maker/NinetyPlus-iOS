@@ -4,8 +4,13 @@ import { randomUUID } from 'node:crypto';
 const API_BASE = 'https://v3.football.api-sports.io';
 const PORT = Number(process.env.PORT || 3000);
 const CACHE_LIMIT = 500;
+const RESPONSE_RATE_LIMIT = Number(process.env.RESPONSE_RATE_LIMIT || 120);
+const PROVIDER_DAILY_BUDGET = Number(process.env.PROVIDER_DAILY_BUDGET || 90);
 const responseCache = new Map();
 const inFlight = new Map();
+const clientWindows = new Map();
+let providerBudgetDay = new Date().toISOString().slice(0, 10);
+let providerRequestsToday = 0;
 
 const ALLOWED_PATHS = new Set([
   'fixtures',
@@ -54,6 +59,41 @@ function sendBody(res, status, body, extraHeaders = {}) {
     ...extraHeaders
   });
   res.end(body);
+}
+
+function clientAddress(req) {
+  const forwarded = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
+  return forwarded || req.socket.remoteAddress || 'unknown';
+}
+
+function allowClient(req) {
+  const now = Date.now();
+  const key = clientAddress(req);
+  const current = clientWindows.get(key);
+  if (!current || now - current.startedAt >= 60_000) {
+    clientWindows.set(key, { startedAt: now, count: 1 });
+    return true;
+  }
+  current.count += 1;
+  return current.count <= RESPONSE_RATE_LIMIT;
+}
+
+function resetProviderBudgetIfNeeded() {
+  const today = new Date().toISOString().slice(0, 10);
+  if (today !== providerBudgetDay) {
+    providerBudgetDay = today;
+    providerRequestsToday = 0;
+  }
+}
+
+function providerBudgetAvailable() {
+  resetProviderBudgetIfNeeded();
+  return providerRequestsToday < PROVIDER_DAILY_BUDGET;
+}
+
+function noteProviderRequest() {
+  resetProviderBudgetIfNeeded();
+  providerRequestsToday += 1;
 }
 
 function normalizeRequest(url) {
@@ -109,6 +149,13 @@ function putCache(cacheKey, result, ttl) {
 }
 
 async function fetchProvider(upstream, key, requestId) {
+  if (!providerBudgetAvailable()) {
+    const error = new Error('provider_daily_budget_exhausted');
+    error.budgetExhausted = true;
+    throw error;
+  }
+
+  noteProviderRequest();
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 12000);
   try {
@@ -117,7 +164,7 @@ async function fetchProvider(upstream, key, requestId) {
       headers: {
         'x-apisports-key': key,
         accept: 'application/json',
-        'user-agent': 'NinetyPlus-Backend/0.4 Railway'
+        'user-agent': 'NinetyPlus-Backend/0.5 Railway'
       }
     });
     const body = await response.text();
@@ -190,6 +237,13 @@ async function handleFootball(req, res, url) {
       });
     }
 
+    if (error?.budgetExhausted) {
+      return sendJson(res, 429, {
+        error: 'provider_daily_budget_exhausted',
+        requestId
+      }, { 'Cache-Control': 'no-store', 'Retry-After': '3600', 'X-90Plus-Request-ID': requestId });
+    }
+
     return sendJson(res, error?.timedOut ? 504 : 502, {
       error: error?.timedOut ? 'sports_provider_timeout' : 'sports_provider_unavailable',
       requestId
@@ -214,22 +268,39 @@ const server = http.createServer(async (req, res) => {
 
   if (url.pathname === '/' || url.pathname === '/api/health') {
     const configured = Boolean(process.env.API_FOOTBALL_KEY);
+    resetProviderBudgetIfNeeded();
     return sendJson(res, configured ? 200 : 503, {
       ok: configured,
       service: 'ninetyplus-backend',
-      version: '0.4',
+      version: '0.5',
       platform: 'railway',
       providerConfigured: configured,
       cacheEntries: responseCache.size,
       inFlightRequests: inFlight.size,
+      providerRequestsToday,
+      providerDailyBudget: PROVIDER_DAILY_BUDGET,
       time: new Date().toISOString()
     }, { 'Cache-Control': 'no-store' });
+  }
+
+  if (!allowClient(req)) {
+    return sendJson(res, 429, { error: 'rate_limited' }, {
+      'Cache-Control': 'no-store',
+      'Retry-After': '60'
+    });
   }
 
   if (url.pathname === '/api/football') return handleFootball(req, res, url);
 
   return sendJson(res, 404, { error: 'not_found' }, { 'Cache-Control': 'no-store' });
 });
+
+setInterval(() => {
+  const cutoff = Date.now() - 5 * 60_000;
+  for (const [key, value] of clientWindows) {
+    if (value.startedAt < cutoff) clientWindows.delete(key);
+  }
+}, 60_000).unref();
 
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`90+ backend listening on ${PORT}`);
