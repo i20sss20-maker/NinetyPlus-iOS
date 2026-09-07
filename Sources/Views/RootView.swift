@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct RootView: View {
+    @Environment(\.scenePhase) private var scenePhase
     @State private var selection = 0
 
     var body: some View {
@@ -28,8 +29,20 @@ struct RootView: View {
         .tint(AppTheme.green)
         .background(AppTheme.bg.ignoresSafeArea())
         .environment(\.layoutDirection, .rightToLeft)
-        .task {
-            await APISportsStore.shared.refreshToday()
+        .task { await refreshNow() }
+        .task(id: scenePhase) {
+            guard scenePhase == .active else { return }
+            await refreshNow()
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(60))
+                guard !Task.isCancelled else { break }
+                await refreshNow()
+            }
         }
+    }
+
+    @MainActor private func refreshNow() async {
+        guard APIFootballClient.isConfigured else { return }
+        await APISportsStore.shared.refreshToday(force: true)
     }
 }
