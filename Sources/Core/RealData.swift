@@ -7,13 +7,15 @@ struct RealArticle: Identifiable, Hashable, Codable {
     let source: String
     let date: Date
     let url: URL?
+    let imageURL: URL?
 
-    init(id: UUID = UUID(), title: String, source: String, date: Date, url: URL?) {
+    init(id: UUID = UUID(), title: String, source: String, date: Date, url: URL?, imageURL: URL? = nil) {
         self.id = id
         self.title = title
         self.source = source
         self.date = date
         self.url = url
+        self.imageURL = imageURL
     }
 }
 
@@ -32,9 +34,16 @@ final class EditorialStore: ObservableObject {
     @Published var lastUpdated: Date?
 
     static let shared = EditorialStore()
-    private let cacheKey = "ninetyplus.editorial.cache.v1"
+    private let cacheKey = "ninetyplus.editorial.cache.v2"
 
     private init() { loadCache() }
+
+    func refreshIfStale(maxAge: TimeInterval) async {
+        if let lastUpdated, !news.isEmpty || !transfers.isEmpty,
+           Date().timeIntervalSince(lastUpdated) >= 0,
+           Date().timeIntervalSince(lastUpdated) < maxAge { return }
+        await refresh()
+    }
 
     func refresh() async {
         guard !isLoading else { return }
@@ -61,8 +70,8 @@ final class EditorialStore: ObservableObject {
             saveCache()
         } else {
             errorMessage = news.isEmpty && transfers.isEmpty
-                ? "تعذر الاتصال بمصادر الأخبار الآن"
-                : "تعذر تحديث بعض المصادر، يتم عرض آخر بيانات محفوظة"
+                ? "تعذر الوصول إلى مصادر الأخبار الآن."
+                : "تعذر تحديث بعض المصادر؛ يتم عرض آخر أخبار تم استلامها."
         }
     }
 
@@ -74,19 +83,22 @@ final class EditorialStore: ObservableObject {
         request.timeoutInterval = 15
         request.cachePolicy = .reloadIgnoringLocalCacheData
         request.setValue("NinetyPlus/2.0 iOS", forHTTPHeaderField: "User-Agent")
+        request.setValue("application/rss+xml, application/xml, text/xml", forHTTPHeaderField: "Accept")
 
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             throw URLError(.badServerResponse)
         }
-        return Array(RSSParser(data: data).parse().prefix(50))
+        return Array(RSSParser(data: data).parse().prefix(60))
     }
 
     private func dedupe(_ input: [RealArticle]) -> [RealArticle] {
         var seen = Set<String>()
         return input.filter {
             let key = $0.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            return !key.isEmpty && $0.url != nil && seen.insert(key).inserted
+            guard !key.isEmpty, let url = $0.url,
+                  ["https", "http"].contains(url.scheme?.lowercased() ?? "") else { return false }
+            return seen.insert(key).inserted
         }
         .sorted { $0.date > $1.date }
     }
@@ -115,6 +127,7 @@ private final class RSSParser: NSObject, XMLParserDelegate {
     private var link = ""
     private var pubDate = ""
     private var source = ""
+    private var descriptionHTML = ""
     private var insideItem = false
 
     init(data: Data) { self.data = data }
@@ -134,6 +147,7 @@ private final class RSSParser: NSObject, XMLParserDelegate {
             link = ""
             pubDate = ""
             source = ""
+            descriptionHTML = ""
         }
     }
 
@@ -144,6 +158,7 @@ private final class RSSParser: NSObject, XMLParserDelegate {
         case "link": link += string
         case "pubDate": pubDate += string
         case "source": source += string
+        case "description": descriptionHTML += string
         default: break
         }
     }
@@ -151,35 +166,109 @@ private final class RSSParser: NSObject, XMLParserDelegate {
     func parser(_ parser: XMLParser, didEndElement elementName: String, namespaceURI: String?, qualifiedName qName: String?) {
         if elementName == "item" {
             insideItem = false
+            let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+            let trimmedLink = link.trimmingCharacters(in: .whitespacesAndNewlines)
             let df = DateFormatter()
             df.locale = Locale(identifier: "en_US_POSIX")
             df.dateFormat = "EEE, dd MMM yyyy HH:mm:ss zzz"
             items.append(
                 RealArticle(
-                    title: title.trimmingCharacters(in: .whitespacesAndNewlines),
+                    title: trimmedTitle,
                     source: source.trimmingCharacters(in: .whitespacesAndNewlines),
                     date: df.date(from: pubDate) ?? Date(),
-                    url: URL(string: link.trimmingCharacters(in: .whitespacesAndNewlines))
+                    url: URL(string: trimmedLink),
+                    imageURL: extractImageURL(from: descriptionHTML)
                 )
             )
         }
         element = ""
+    }
+
+    private func extractImageURL(from html: String) -> URL? {
+        let patterns = [
+            #"<img[^>]+src=[\"']([^\"']+)[\"']"#,
+            #"https?://[^\s\"'<>]+\.(?:jpg|jpeg|png|webp)"#
+        ]
+        for pattern in patterns {
+            guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { continue }
+            let range = NSRange(html.startIndex..<html.endIndex, in: html)
+            guard let match = regex.firstMatch(in: html, range: range) else { continue }
+            let capture = match.numberOfRanges > 1 ? match.range(at: 1) : match.range(at: 0)
+            guard let swiftRange = Range(capture, in: html) else { continue }
+            let raw = String(html[swiftRange])
+                .replacingOccurrences(of: "&amp;", with: "&")
+                .replacingOccurrences(of: "&#39;", with: "'")
+                .replacingOccurrences(of: "&quot;", with: "\"")
+            if let url = URL(string: raw), ["https", "http"].contains(url.scheme?.lowercased() ?? "") { return url }
+        }
+        return nil
     }
 }
 
 struct RemoteBadge: View {
     let url: String?
 
+    private var imageURL: URL? {
+        guard let raw = url?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !raw.isEmpty, let parsed = URL(string: raw),
+              ["https", "http"].contains(parsed.scheme?.lowercased() ?? "") else { return nil }
+        return parsed
+    }
+
     var body: some View {
-        AsyncImage(url: url.flatMap(URL.init(string:))) { phase in
-            switch phase {
-            case .success(let image): image.resizable().scaledToFit()
-            default:
-                Image(systemName: "shield.fill")
-                    .resizable()
-                    .scaledToFit()
-                    .foregroundStyle(AppTheme.green.opacity(0.7))
+        ZStack {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Color.white.opacity(0.055))
+            if let imageURL {
+                AsyncImage(url: imageURL, transaction: Transaction(animation: .easeInOut(duration: 0.2))) { phase in
+                    switch phase {
+                    case .empty:
+                        ProgressView().tint(AppTheme.green).scaleEffect(0.7)
+                    case .success(let image):
+                        image.resizable().scaledToFit().padding(4)
+                    case .failure:
+                        fallback
+                    @unknown default:
+                        fallback
+                    }
+                }
+            } else {
+                fallback
             }
         }
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(AppTheme.border, lineWidth: 1))
+        .clipped()
+    }
+
+    private var fallback: some View {
+        Image(systemName: "sportscourt.fill")
+            .resizable()
+            .scaledToFit()
+            .padding(12)
+            .foregroundStyle(AppTheme.dimmed)
+    }
+}
+
+struct EditorialArtwork: View {
+    let article: RealArticle
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(LinearGradient(colors: [AppTheme.cardRaised, AppTheme.greenDeep.opacity(0.55)], startPoint: .topLeading, endPoint: .bottomTrailing))
+            if let url = article.imageURL {
+                AsyncImage(url: url) { phase in
+                    switch phase {
+                    case .success(let image): image.resizable().scaledToFill()
+                    default:
+                        Image(systemName: "newspaper.fill").font(.title2).foregroundStyle(AppTheme.green)
+                    }
+                }
+            } else {
+                Image(systemName: "newspaper.fill").font(.title2).foregroundStyle(AppTheme.green)
+            }
+        }
+        .clipped()
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(AppTheme.border, lineWidth: 1))
     }
 }
