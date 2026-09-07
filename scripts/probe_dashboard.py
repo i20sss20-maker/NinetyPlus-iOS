@@ -13,16 +13,36 @@ status,body,_=get(BASE+'api/health')
 try: health=json.loads(body)
 except Exception: health={}
 report['health']={'status':status,**{k:health.get(k) for k in ['ok','providerRequestsToday','providerDailyBudget']}}
-if health.get('ok') and health.get('providerRequestsToday',90)+2 <= health.get('providerDailyBudget',0):
-    today=datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=3))).date()
-    for query in [{'path':'teams','search':'Ittihad'},{'path':'fixtures','date':str(today+datetime.timedelta(days=1)),'timezone':'Asia/Riyadh'}]:
+if health.get('ok') and health.get('providerRequestsToday',90)+4 <= health.get('providerDailyBudget',0):
+    riyadh=datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=3)))
+    today=riyadh.date()
+    season=riyadh.year if riyadh.month >= 7 else riyadh.year-1
+    queries=[
+        {'path':'teams','search':'Ittihad'},
+        {'path':'fixtures','date':str(today+datetime.timedelta(days=1)),'timezone':'Asia/Riyadh'},
+        {'path':'players','id':'874','season':str(season)},
+        {'path':'players','id':'874','season':str(season-1)},
+    ]
+    for query in queries:
         status,body,headers=get(BASE+'api/football?'+urllib.parse.urlencode(query)); report['footballRequests']+=1
         try: value=json.loads(body)
         except Exception: value={}
         result=value.get('response',[])
         check={'query':query,'status':status,'errors':value.get('errors') or value.get('error'),'count':len(result) if isinstance(result,list) else None}
         if query['path']=='teams': check['saudiClubPresent']=any(x.get('team',{}).get('id')==2938 for x in result)
+        if query['path']=='players':
+            stats=[]
+            for item in result if isinstance(result,list) else []:
+                if item.get('player',{}).get('id')==874:
+                    stats=item.get('statistics') or []
+                    break
+            check['player874Present']=bool(stats)
+            check['statRows']=len(stats)
+            check['teams']=[s.get('team',{}).get('name') for s in stats[:3]]
+            check['goals']=[s.get('goals',{}).get('total') for s in stats[:3]]
         report['checks'].append(check)
+else:
+    report['checks'].append({'skipped':'football probes','reason':'daily provider budget too low or backend unhealthy'})
 for name,url in [('hihi2','https://hihi2.com/feed'),('france24','https://www.france24.com/ar/رياضة/rss')]:
     status,body,headers=get(url); entry={'name':name,'status':status}
     try:
