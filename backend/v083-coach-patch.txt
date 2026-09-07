@@ -41,7 +41,7 @@ function collectESPNRefs(value,out=new Set(),depth=0,seen=new Set()) {
   seen.add(value);
   if (Array.isArray(value)) { value.forEach(item=>collectESPNRefs(item,out,depth+1,seen)); return out; }
   for (const [key,candidate] of Object.entries(value)) {
-    if ((key === '$ref' || key === 'href') && typeof candidate === 'string' && candidate.startsWith('http')) out.add(candidate.replace(/^http:/,'https:'));
+    if ((key === '$ref' || key === 'href') && typeof candidate === 'string' && candidate.startsWith('http')) out.add(candidate.startsWith('http:') ? 'https:' + candidate.slice(5) : candidate);
     else collectESPNRefs(candidate,out,depth+1,seen);
   }
   return out;
@@ -115,19 +115,32 @@ async function espnTeamCoach(leagueCode,teamId) {
   return null;
 }
 function splSlugForTeam(name) {
-  const key=String(name||'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
+  const key=String(name||'').toLowerCase().trim();
   const exact={
     'al ahli':'al-ahli','al ettifaq':'al-ettifaq','al faisaly':'al-faisaly','al fateh':'al-fateh','al fayha':'al-fayha',
     'al hazem':'al-hazem','al hilal':'al-hilal','al ittihad':'al-ittihad','al khaleej':'al-khaleej','al kholood':'al-kholood',
     'al nassr':'al-nassr','al qadsiah':'al-qadsiah','al riyadh':'al-riyadh','al shabab':'al-shabab','al taawoun':'al-taawoun',
     'abha':'abha','diriyah club':'diriyah-club','neom sc':'neom','neom':'neom'
   };
-  return exact[key] || key.replace(/\s+/g,'-');
+  if (exact[key]) return exact[key];
+  return key.split(' ').filter(Boolean).join('-');
 }
 function htmlText(value) {
-  return String(value||'').replace(/<script[\s\S]*?<\/script>/gi,' ').replace(/<style[\s\S]*?<\/style>/gi,' ')
-    .replace(/<[^>]+>/g,' ').replace(/&nbsp;/gi,' ').replace(/&amp;/gi,'&').replace(/&#39;/g,"'").replace(/&quot;/gi,'"')
-    .replace(/\s+/g,' ').trim();
+  const input=String(value||''); let out=''; let insideTag=false;
+  for (const ch of input) {
+    if (ch === '<') { insideTag=true; out+=' '; continue; }
+    if (ch === '>') { insideTag=false; out+=' '; continue; }
+    if (!insideTag) out+=ch;
+  }
+  return out.replaceAll('&nbsp;',' ').replaceAll('&amp;','&').replaceAll('&#39;',"'").replaceAll('&quot;','"').split(/ +|\n|\r|\t/).filter(Boolean).join(' ');
+}
+function coachFromSPLText(text) {
+  const marker='Coach '; const start=text.indexOf(marker); if (start<0) return null;
+  const rest=text.slice(start+marker.length); const stops=[' Position ',' Wins ',' Matches ',' Website ',' Latest ',' Fixtures ',' Standings '];
+  let end=rest.length;
+  for (const stop of stops) { const index=rest.indexOf(stop); if (index>=0 && index<end) end=index; }
+  const name=rest.slice(0,end).trim();
+  return name.length>=2 && name.length<=120 ? {name,source:'spl'} : null;
 }
 async function splTeamCoach(teamName) {
   const slug=splSlugForTeam(teamName); if (!slug) return null;
@@ -138,10 +151,8 @@ async function splTeamCoach(teamName) {
     try {
       const response=await fetchWithTimeout(url,{headers:{accept:'text/html,application/xhtml+xml','user-agent':'Mozilla/5.0 NinetyPlus/0.8.6'}},10000);
       if (!response.ok) continue;
-      const text=htmlText(await response.text());
-      const match=text.match(/\bCoach\s+(.{2,100}?)\s+(?:Position|Wins|Matches|Website|Latest|Fixtures|Standings)\b/i);
-      const name=match?.[1]?.trim();
-      if (name) { const coach={name,source:'spl'}; putCache(cacheKey,{status:200,ok:true,body:JSON.stringify(coach)},10800); return coach; }
+      const coach=coachFromSPLText(htmlText(await response.text()));
+      if (coach) { putCache(cacheKey,{status:200,ok:true,body:JSON.stringify(coach)},10800); return coach; }
     } catch {}
   }
   return null;
