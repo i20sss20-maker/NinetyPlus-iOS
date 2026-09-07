@@ -1,9 +1,9 @@
 import Foundation
 
 @MainActor
-extension SportsStore {
+extension EditorialStore {
     func refreshIfStale(maxAge: TimeInterval = 90) async {
-        if matches.isEmpty || news.isEmpty || transfers.isEmpty {
+        if news.isEmpty || transfers.isEmpty {
             await refresh()
             return
         }
