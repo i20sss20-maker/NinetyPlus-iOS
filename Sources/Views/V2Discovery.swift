@@ -207,6 +207,8 @@ struct V2PlayerView: View {
     @State private var resource = PageResource<[APIPlusPlayerSeasonStat]>()
     @State private var retry = 0
     private var followed: Bool { SavedFavoriteIDs.parse(favoritePlayerIDs).contains(player.id) }
+    private var displayedSeason: Int { resource.value?.first?.season ?? APIFootballClient.currentSeason }
+    private var isPreviousSeason: Bool { resource.value?.first.map { $0.season != APIFootballClient.currentSeason } ?? false }
     var body: some View {
         ScrollView {
             VStack(spacing: 18) {
@@ -224,7 +226,13 @@ struct V2PlayerView: View {
                     info("الطول", player.height?.replacingOccurrences(of: "cm", with: "سم"))
                     info("الوزن", player.weight?.replacingOccurrences(of: "kg", with: "كجم"))
                 }.padding(18).background(AppTheme.card, in: RoundedRectangle(cornerRadius: 20))
-                Text("إحصائيات موسم \(String(APIFootballClient.currentSeason))").font(.headline).frame(maxWidth: .infinity, alignment: .leading)
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("إحصائيات موسم \(SeasonCopy.label(displayedSeason))").font(.headline)
+                    if isPreviousSeason {
+                        Text("المصدر لم يوفّر إحصائيات الموسم الحالي؛ هذه آخر إحصائيات متاحة وموسمها موضح أعلاه.")
+                            .font(.caption).foregroundStyle(.orange)
+                    }
+                }.frame(maxWidth: .infinity, alignment: .leading)
                 PageLoadFeedback(loading: resource.isLoading || resource.key == nil, hasValue: resource.value != nil, message: resource.errorMessage, updatedAt: nil) { retry += 1 }
                 ForEach(resource.value ?? []) { stat in
                     VStack(spacing: 14) {
@@ -243,7 +251,7 @@ struct V2PlayerView: View {
                     }.padding(16).background(AppTheme.cardRaised, in: RoundedRectangle(cornerRadius: 20))
                 }
                 if resource.value?.isEmpty == true, !resource.isLoading, resource.errorMessage == nil {
-                    Text("لم ينشر المصدر إحصائيات هذا الموسم للاعب بعد.").font(.caption).foregroundStyle(AppTheme.muted).padding(20)
+                    Text("لم ينشر المصدر إحصائيات متاحة للاعب في الموسمين اللذين تم فحصهما.").font(.caption).foregroundStyle(AppTheme.muted).padding(20)
                 }
             }.padding(16)
         }.background(AppTheme.bg.ignoresSafeArea()).navigationTitle("اللاعب").navigationBarTitleDisplayMode(.inline).toolbar(.visible, for: .navigationBar)
