@@ -1,30 +1,24 @@
 from pathlib import Path
 
-
-def replace_once(text: str, old: str, new: str, label: str) -> str:
-    if new in text:
-        return text
-    if old not in text:
-        raise SystemExit(f"canonical reindex patch missing: {label}")
-    return text.replace(old, new, 1)
-
 client = Path("Sources/Core/CanonicalSportsClient.swift")
-s = client.read_text()
-s = replace_once(
-    s,
-    '''    static func detail(matchID: String) async throws -> MatchDetail {\n        try await get("api/v2/match", query: [.init(name: "id", value: matchID)])\n    }''',
-    '''    static func detail(match: APIPlusMatch) async throws -> MatchDetail {\n        var query = [URLQueryItem(name: "id", value: match.id)]\n        if let kickoff = match.date {\n            let formatter = DateFormatter()\n            formatter.locale = Locale(identifier: "en_US_POSIX")\n            formatter.calendar = Calendar(identifier: .gregorian)\n            formatter.timeZone = TimeZone(identifier: "Asia/Riyadh")\n            formatter.dateFormat = "yyyy-MM-dd"\n            query.append(URLQueryItem(name: "date", value: formatter.string(from: kickoff)))\n        }\n        return try await get("api/v2/match", query: query)\n    }''',
-    "canonical detail date"
-)
-client.write_text(s)
-
+client_text = client.read_text()
 view = Path("Sources/Views/V2MatchExperience.swift")
-s = view.read_text()
-s = replace_once(
-    s,
-    'let detail = try await CanonicalSportsClient.detail(matchID: match.id)',
-    'let detail = try await CanonicalSportsClient.detail(match: match)',
-    "canonical detail call"
-)
-view.write_text(s)
-print("Applied self-healing canonical match reindex date forwarding")
+view_text = view.read_text()
+
+# The release transformation already installs date-aware canonical detail loading.
+# Keep this separate guard so future refactors cannot silently remove self-healing
+# after a Railway restart.
+required_client = [
+    'static func detail(matchID: String, date: Date? = nil) async throws -> MatchDetail',
+    'query.append(.init(name: "date", value: formatter.string(from: date)))',
+    'return try await get("api/v2/match", query: query)',
+]
+required_view = 'CanonicalSportsClient.detail(matchID: match.id, date: match.date)'
+
+missing = [marker for marker in required_client if marker not in client_text]
+if required_view not in view_text:
+    missing.append(required_view)
+if missing:
+    raise SystemExit("canonical reindex guard missing: " + " | ".join(missing))
+
+print("Verified self-healing canonical match ID + date forwarding")
