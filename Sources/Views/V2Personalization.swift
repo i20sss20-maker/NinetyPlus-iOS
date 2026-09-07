@@ -167,36 +167,24 @@ struct V2MoreView: View {
                         .background((isHealthy ? AppTheme.green : Color.orange).opacity(0.12), in: RoundedRectangle(cornerRadius: 14))
                 }
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("حالة خدمة 90+").font(.headline).foregroundStyle(.white)
-                    Text(healthLoading ? "جاري فحص Railway..." : (isHealthy ? "متصل والخدمة تعمل فعليًا" : "تعذر الوصول للخدمة حاليًا"))
+                    Text("حالة الخدمة").font(.headline).foregroundStyle(.white)
+                    Text(healthLoading ? "جاري التحقق من الاتصال..." : (isHealthy ? "الخدمة متصلة وتعمل بشكل طبيعي" : "تعذر الاتصال بالخدمة مؤقتًا"))
                         .font(.caption)
                         .foregroundStyle(AppTheme.muted)
                 }
                 Spacer()
             }
 
-            if let health, isHealthy {
+            if !healthLoading && !isHealthy {
                 Divider().overlay(Color.white.opacity(0.08))
-                HStack {
-                    healthMetric("إصدار", health.version ?? "—")
-                    healthMetric("الكاش", "\(health.cacheEntries ?? 0)")
-                    if let used = health.providerRequestsToday, let budget = health.providerDailyBudget {
-                        healthMetric("استهلاك اليوم", "\(used)/\(budget)")
-                    }
-                }
+                Text("قد تستمر بعض الصفحات بعرض آخر بيانات محفوظة حتى يعود الاتصال.")
+                    .font(.caption)
+                    .foregroundStyle(AppTheme.muted)
             }
         }
         .padding(14)
         .background(AppTheme.card, in: RoundedRectangle(cornerRadius: 18))
         .padding(.horizontal, 16)
-    }
-
-    private func healthMetric(_ title: String, _ value: String) -> some View {
-        VStack(spacing: 3) {
-            Text(value).font(.subheadline.bold()).foregroundStyle(.white)
-            Text(title).font(.caption2).foregroundStyle(AppTheme.muted)
-        }
-        .frame(maxWidth: .infinity)
     }
 
     @MainActor private func refreshHealth() async {
