@@ -1,5 +1,19 @@
 import SwiftUI
 
+// Legacy DTO isolated here only for source compatibility while old entry points are removed.
+struct LiveMatch: Identifiable, Hashable, Codable {
+    let id: String
+    let league: String
+    let home: String
+    let away: String
+    let homeBadge: String?
+    let awayBadge: String?
+    let homeScore: String?
+    let awayScore: String?
+    let time: String
+    let status: String
+}
+
 // Legacy entry point kept only for source compatibility with older screens.
 // It adapts the old lightweight match model into the production V2 match center.
 struct MatchCenterView: View {
