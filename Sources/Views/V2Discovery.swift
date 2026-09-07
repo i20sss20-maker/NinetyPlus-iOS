@@ -212,7 +212,7 @@ struct V2PlayerView: View {
             VStack(spacing: 18) {
                 VStack(spacing: 14) {
                     RemoteBadge(url: player.photo).frame(width: 112, height: 112)
-                    Text(player.name).font(.title2.bold()).multilineTextAlignment(.center)
+                    Text(player.name).font(.title2.bold()).multilineTextAlignment(.center).accessibilityIdentifier("player.name")
                     Button(action: toggleFollow) {
                         Label(followed ? "متابَع" : "متابعة اللاعب", systemImage: followed ? "star.fill" : "star")
                             .font(.subheadline.bold()).foregroundStyle(AppTheme.green).padding(12).background(AppTheme.green.opacity(0.1), in: Capsule())
@@ -220,7 +220,7 @@ struct V2PlayerView: View {
                 }.frame(maxWidth: .infinity).padding(20).background(AppTheme.cardRaised, in: RoundedRectangle(cornerRadius: 24))
                 VStack(spacing: 14) {
                     info("الجنسية", SportsArabic.country(player.nationality))
-                    info("تاريخ الميلاد", player.birth)
+                    info("تاريخ الميلاد", SportsCopy.birthDate(player.birth))
                     info("الطول", player.height?.replacingOccurrences(of: "cm", with: "سم"))
                     info("الوزن", player.weight?.replacingOccurrences(of: "kg", with: "كجم"))
                 }.padding(18).background(AppTheme.card, in: RoundedRectangle(cornerRadius: 20))
@@ -238,7 +238,7 @@ struct V2PlayerView: View {
                         }
                         HStack {
                             metric("مباريات", stat.appearances); metric("دقائق", stat.minutes)
-                            metric("أهداف", stat.goals); metric("صناعة", stat.assists)
+                            metric("أهداف", stat.goals); metric("صناعة أهداف", stat.assists)
                         }
                     }.padding(16).background(AppTheme.cardRaised, in: RoundedRectangle(cornerRadius: 20))
                 }
@@ -249,8 +249,8 @@ struct V2PlayerView: View {
         }.background(AppTheme.bg.ignoresSafeArea()).navigationTitle("اللاعب").navigationBarTitleDisplayMode(.inline).toolbar(.visible, for: .navigationBar)
             .task(id: "\(player.id):\(retry)") { await load() }.refreshable { await load() }.onDisappear { resource.invalidate() }
     }
-    private func metric(_ title: String, _ value: Int) -> some View {
-        VStack(spacing: 5) { Text(String(value)).font(.headline.bold()); Text(title).font(.caption2).foregroundStyle(AppTheme.muted) }.frame(maxWidth: .infinity)
+    private func metric(_ title: String, _ value: Int?) -> some View {
+        VStack(spacing: 5) { Text(SportsCopy.metric(value)).font(.headline.bold()); Text(title).font(.caption2).foregroundStyle(AppTheme.muted) }.frame(maxWidth: .infinity)
     }
     private func info(_ title: String, _ value: String?) -> some View {
         HStack { Text(title).foregroundStyle(AppTheme.muted); Spacer(); Text(value?.isEmpty == false ? value! : "غير متاح").fontWeight(.semibold) }.font(.subheadline)

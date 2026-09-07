@@ -283,7 +283,7 @@ private struct DashboardNewsCard: View {
             if article.imageURL != nil { EditorialArtwork(article: article).frame(width: 104, height: 92).clipShape(RoundedRectangle(cornerRadius: 14)) }
             VStack(alignment: .leading, spacing: 8) {
                 Text(article.title).font(.subheadline.bold()).foregroundStyle(.white).lineLimit(3).multilineTextAlignment(.leading)
-                HStack(spacing: 5) { Text(article.source).lineLimit(1).foregroundStyle(AppTheme.green); Text("•"); Text(article.date, style: .relative).lineLimit(1) }.font(.caption2).foregroundStyle(AppTheme.muted)
+                HStack(spacing: 5) { Text(article.source).lineLimit(1).foregroundStyle(AppTheme.green); Text("•"); Text(SportsCopy.published(article.date)).lineLimit(1) }.font(.caption2).foregroundStyle(AppTheme.muted)
                 Label("قراءة من المصدر", systemImage: "arrow.up.left").font(.caption2).foregroundStyle(AppTheme.muted)
             }.frame(maxWidth: .infinity, alignment: .leading)
         }.padding(14).background(AppTheme.cardRaised, in: RoundedRectangle(cornerRadius: 20)).padding(.horizontal, 16)

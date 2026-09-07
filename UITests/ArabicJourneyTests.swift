@@ -51,6 +51,35 @@ final class ArabicJourneyTests: XCTestCase {
             XCTAssertTrue(app.navigationBars.buttons.firstMatch.exists)
         }
     }
+    @MainActor func testTransferReportsAndPlayerProfile() throws {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = ["-AppleLanguages", "(ar)", "-AppleLocale", "ar_SA"]
+        app.launch()
+        XCTAssertTrue(app.tabBars.buttons["المزيد"].waitForExistence(timeout: 20))
+        app.tabBars.buttons["المزيد"].tap()
+        let transfers = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "آخر أخبار سوق الانتقالات")).firstMatch
+        XCTAssertTrue(transfers.waitForExistence(timeout: 10))
+        transfers.tap()
+        XCTAssertTrue(app.buttons["transfers.sources"].waitForExistence(timeout: 20))
+        let article = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@", "transfers.article.")).firstMatch
+        XCTAssertTrue(article.waitForExistence(timeout: 25), "Transfer reports must be backed by source links")
+        XCTAssertFalse(app.staticTexts["رسمي"].exists, "Headlines alone must not become verified deal labels")
+        Thread.sleep(forTimeInterval: 3)
+        capture("08-transfer-reports", app: app)
+        app.tabBars.buttons["البحث"].tap()
+        XCTAssertTrue(app.searchFields.firstMatch.waitForExistence(timeout: 10))
+        app.searchFields.firstMatch.tap()
+        app.searchFields.firstMatch.typeText("رونالدو\n")
+        let player = app.buttons["search.player.874"]
+        XCTAssertTrue(player.waitForExistence(timeout: 30), "Player search must include the known provider record")
+        if !player.isHittable { app.swipeUp() }
+        player.tap()
+        XCTAssertTrue(app.staticTexts["player.name"].waitForExistence(timeout: 15))
+        Thread.sleep(forTimeInterval: 8)
+        capture("09-player-source-coverage", app: app)
+    }
+
     @MainActor private func capture(_ name: String, app: XCUIApplication) {
         let screenshot = XCTAttachment(screenshot: app.screenshot())
         screenshot.name = name; screenshot.lifetime = .keepAlways; add(screenshot)

@@ -7,10 +7,10 @@ struct EnhancedNewsView: View {
     private var filtered: [RealArticle] {
         let text = query.trimmingCharacters(in: .whitespacesAndNewlines)
         return store.news.filter { article in
-            guard article.url != nil, !article.title.isEmpty else { return false }
-            if !text.isEmpty && !article.title.localizedCaseInsensitiveContains(text) && !article.source.localizedCaseInsensitiveContains(text) { return false }
+            guard EditorialPresentation.safeURL(article.url) != nil, !article.title.isEmpty else { return false }
+            if !EditorialPresentation.matches(article, query: text) { return false }
             if filter == "السعودية" { return ["السعود", "الهلال", "النصر", "الاتحاد", "روشن"].contains { article.title.contains($0) } }
-            if filter == "الانتقالات" { return ["انتقال", "صفقة", "تعاقد", "ميركاتو"].contains { article.title.contains($0) } }
+            if filter == "الانتقالات" { return EditorialPresentation.isTransferTopic(article.title) }
             return true
         }.sorted { $0.date > $1.date }
     }
@@ -59,7 +59,7 @@ struct EnhancedNewsView: View {
                     .padding(.horizontal, 10).padding(.vertical, 6).background(AppTheme.green, in: Capsule())
                 Text(article.title).font(.title3.bold()).foregroundStyle(.white).multilineTextAlignment(.leading).lineLimit(4)
                 HStack {
-                    Text(article.date, style: .relative).font(.caption2).foregroundStyle(.white.opacity(0.8))
+                    Text(SportsCopy.published(article.date)).font(.caption2).foregroundStyle(.white.opacity(0.8))
                     Spacer()
                     Label("قراءة الخبر", systemImage: "arrow.up.left").font(.caption.bold()).foregroundStyle(AppTheme.green)
                 }
@@ -75,7 +75,7 @@ struct EnhancedNewsView: View {
             VStack(alignment: .leading, spacing: 9) {
                 Text(article.title).font(.subheadline.bold()).foregroundStyle(.white).multilineTextAlignment(.leading).lineLimit(3)
                 Text(article.source).font(.caption.bold()).foregroundStyle(AppTheme.green).lineLimit(1)
-                Text(article.date, style: .relative).font(.caption2).foregroundStyle(AppTheme.muted)
+                Text(SportsCopy.published(article.date)).font(.caption2).foregroundStyle(AppTheme.muted)
             }.frame(maxWidth: .infinity, alignment: .leading)
         }.padding(14).background(AppTheme.cardRaised, in: RoundedRectangle(cornerRadius: 20)).padding(.horizontal, 16)
     }

@@ -197,29 +197,6 @@ struct APIPlayerProfileItem: Decodable {
     let player: Player
 }
 
-struct APITopScorerItem: Decodable {
-    struct Player: Decodable {
-        let id: Int
-        let name: String?
-        let photo: String?
-        let nationality: String?
-    }
-    struct Statistic: Decodable {
-        struct Team: Decodable { let id: Int?; let name: String?; let logo: String? }
-        struct League: Decodable { let id: Int?; let name: String?; let country: String?; let logo: String? }
-        struct Games: Decodable { let appearances: Int?; let minutes: Int?; let position: String?; let rating: String? }
-        struct Goals: Decodable { let total: Int?; let assists: Int? }
-        struct Cards: Decodable { let yellow: Int?; let red: Int? }
-        let team: Team
-        let league: League?
-        let games: Games?
-        let goals: Goals?
-        let cards: Cards?
-    }
-    let player: Player
-    let statistics: [Statistic]
-}
-
 struct APIEventItem: Decodable {
     struct Time: Decodable { let elapsed: Int?; let extra: Int? }
     struct Team: Decodable { let id: Int?; let name: String?; let logo: String? }

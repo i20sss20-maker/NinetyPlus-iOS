@@ -24,13 +24,6 @@ struct APIPlusScorer: Identifiable, Hashable {
     let nationality: String?; let teamID: String?; let team: String; let teamLogo: String?
     let appearances: Int; let minutes: Int; let goals: Int; let assists: Int
 }
-struct APIPlusPlayerSeasonStat: Identifiable, Hashable {
-    let id: String; let league: String; let leagueLogo: String?; let teamID: String?
-    let team: String; let teamLogo: String?; let appearances: Int; let minutes: Int
-    let position: String?; let rating: String?; let goals: Int; let assists: Int
-    let yellowCards: Int; let redCards: Int
-}
-
 /// The free plan supports the dated fixture endpoint, but not next/last queries.
 /// Date responses are shared across followed clubs instead of fetching per club.
 private actor SharedFixtureDays {
@@ -170,15 +163,12 @@ final class APISportsStore: ObservableObject {
         let envelope: APIEnvelope<[APITopScorerItem]> = try await APIFootballClient.get("players", query: [
             .init(name: "id", value: playerID), .init(name: "season", value: String(APIFootballClient.currentSeason))
         ])
-        guard let item = envelope.response.first else { return [] }
+        guard let item = envelope.response.first(where: { String($0.player.id) == playerID }) else { return [] }
         return item.statistics.enumerated().map { index, stat in
-            APIPlusPlayerSeasonStat(id: "\(playerID)-\(stat.league?.id ?? index)-\(stat.team.id ?? index)",
-                league: stat.league?.name ?? "الموسم الحالي", leagueLogo: stat.league?.logo,
-                teamID: stat.team.id.map(String.init), team: stat.team.name ?? "—", teamLogo: stat.team.logo,
-                appearances: stat.games?.appearances ?? 0, minutes: stat.games?.minutes ?? 0, position: stat.games?.position, rating: stat.games?.rating,
-                goals: stat.goals?.total ?? 0, assists: stat.goals?.assists ?? 0, yellowCards: stat.cards?.yellow ?? 0, redCards: stat.cards?.red ?? 0)
+            APIPlusPlayerSeasonStat(playerID: playerID, index: index, statistic: stat)
         }
     }
+
     func searchTeams(_ text: String) async throws -> [APIPlusTeam] {
         var query = text.trimmingCharacters(in: .whitespacesAndNewlines)
         // Searching "Al Ittihad" omitted the Saudi club because its provider name

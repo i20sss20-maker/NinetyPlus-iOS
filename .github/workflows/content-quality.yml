@@ -1,0 +1,27 @@
+name: Data meaning and Arabic content checks
+on:
+  push:
+    branches: [main]
+    paths: ['Sources/**', 'Tests/**', '.github/workflows/content-quality.yml']
+  workflow_dispatch:
+concurrency:
+  group: content-quality-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  quality:
+    runs-on: macos-15
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Confirm source headlines are not verified signings
+        run: |
+          swiftc -swift-version 5 -parse-as-library Sources/Core/EditorialFeed.swift Sources/Core/EditorialPresentation.swift Tests/EditorialPresentationTests.swift -o /tmp/editorial-presentation-tests
+          /tmp/editorial-presentation-tests
+      - name: Decode provider appearance field and preserve unknown metrics
+        run: |
+          swiftc -swift-version 5 -parse-as-library Sources/Core/PlayerSeasonData.swift Sources/Core/SportsCopy.swift Tests/PlayerSeasonDataTests.swift -o /tmp/player-season-tests
+          /tmp/player-season-tests
+      - name: Verify readable Arabic publication times
+        run: |
+          swiftc -swift-version 5 -parse-as-library Sources/Core/SportsCopy.swift Tests/SportsCopyTests.swift -o /tmp/sports-copy-tests
+          /tmp/sports-copy-tests
