@@ -48,9 +48,9 @@ replaceOnce(
 );
 
 replaceOnce(
-`  if (url.pathname === '/api/v2/match') {\n    const id=String(url.searchParams.get('id')||''); if(!id.startsWith('np:')) return sendJson(res,400,{error:'invalid_match_id'});\n    try { return sendJson(res,200,await canonicalMatchDetail(id),{'Cache-Control':'public, max-age=15, stale-while-revalidate=60','X-90Plus-Source':'canonical'});\n    catch(error) { return sendJson(res,error?.status||503,{error:error?.message||'match_unavailable'}); }\n  }`,
-`  if (url.pathname === '/api/v2/match') {\n    const id=String(url.searchParams.get('id')||''); if(!id.startsWith('np:')) return sendJson(res,400,{error:'invalid_match_id'});\n    const date=String(url.searchParams.get('date')||'');\n    try { return sendJson(res,200,await canonicalMatchDetail(id,date),{'Cache-Control':'public, max-age=15, stale-while-revalidate=60','X-90Plus-Source':'canonical'});\n    catch(error) { return sendJson(res,error?.status||503,{error:error?.message||'match_unavailable'}); }\n  }`,
-  'match date reindex route'
+  "await canonicalMatchDetail(id)",
+  "await canonicalMatchDetail(id,String(url.searchParams.get('date')||''))",
+  'match date forwarding'
 );
 
 s = s.replace("90+ backend v0.7 listening", "90+ backend v0.8 listening");
