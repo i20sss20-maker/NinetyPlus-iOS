@@ -1,12 +1,13 @@
 from pathlib import Path
 
 
-def replace_once(text: str, old: str, new: str, label: str) -> str:
-    if new in text:
-        return text
-    if old not in text:
+def replace_once(old: str, new: str, label: str) -> str:
+    global s
+    if new in s:
+        return s
+    if old not in s:
         raise SystemExit(f"metadata patch pattern missing: {label}")
-    return text.replace(old, new, 1)
+    return s.replace(old, new, 1)
 
 client = Path("Sources/Core/CanonicalSportsClient.swift")
 s = client.read_text()
