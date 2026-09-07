@@ -21,6 +21,7 @@ jobs:
           python3 scripts/apply_match_metadata_fixes.py
           python3 scripts/apply_lineup_ui_fixes.py
           python3 scripts/apply_search_resilience_fixes.py
+          python3 scripts/apply_canonical_reindex_fixes.py
 
       - name: Test page loading state
         run: |
