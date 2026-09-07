@@ -102,7 +102,8 @@ struct APICompactMatchCard: View {
                 .multilineTextAlignment(.center)
                 .lineLimit(2)
                 .minimumScaleFactor(0.72)
-                .frame(width: 102, minHeight: 30)
+                .frame(width: 102)
+                .frame(minHeight: 30)
         }
     }
 }
