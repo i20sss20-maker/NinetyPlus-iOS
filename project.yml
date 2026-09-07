@@ -8,7 +8,7 @@ settings:
     SWIFT_VERSION: 5.10
     PRODUCT_BUNDLE_IDENTIFIER: com.ninetyplus.app
     MARKETING_VERSION: 1.0.0
-    CURRENT_PROJECT_VERSION: 56
+    CURRENT_PROJECT_VERSION: 57
 targets:
   NinetyPlus:
     type: application
@@ -21,7 +21,7 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         INFOPLIST_KEY_CFBundleDisplayName: '90+'
         INFOPLIST_KEY_UIUserInterfaceStyle: Dark
-        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: UIInterfaceOrientationPortrait
+        INFOPLIST_KEY_UISupportedInterfaceOrientATIONS_iPhone: UIInterfaceOrientationPortrait
     info:
       path: Sources/App/Info.plist
       properties:
