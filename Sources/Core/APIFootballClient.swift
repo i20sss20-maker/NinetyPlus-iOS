@@ -12,6 +12,19 @@ enum APIFootballError: LocalizedError {
     }
 }
 
+struct NinetyPlusBackendHealth: Decodable {
+    let ok: Bool
+    let service: String?
+    let version: String?
+    let platform: String?
+    let providerConfigured: Bool?
+    let cacheEntries: Int?
+    let inFlightRequests: Int?
+    let providerRequestsToday: Int?
+    let providerDailyBudget: Int?
+    let time: String?
+}
+
 enum APIFootballClient {
     static let backendURLDefaultsName = "ninetyPlusBackendURL"
     // Legacy compile compatibility only. The app no longer reads or sends a provider key.
@@ -34,6 +47,21 @@ enum APIFootballClient {
     static var isConfigured: Bool { hasBackend }
     // Legacy views historically checked `hasKey`; it now means backend readiness only.
     static var hasKey: Bool { isConfigured }
+
+    static func health() async throws -> NinetyPlusBackendHealth {
+        guard let backendURL else { throw APIFootballError.missingConfiguration }
+        let url = backendURL.appending(path: "api/health")
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 8
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.setValue("NinetyPlus/2.0 iOS", forHTTPHeaderField: "User-Agent")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            throw APIFootballError.badResponse
+        }
+        return try JSONDecoder().decode(NinetyPlusBackendHealth.self, from: data)
+    }
 
     static func get<T: Decodable>(_ path: String, query: [URLQueryItem] = []) async throws -> T {
         guard let backendURL else { throw APIFootballError.missingConfiguration }
