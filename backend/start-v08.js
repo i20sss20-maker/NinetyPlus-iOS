@@ -20,9 +20,27 @@ replaceOnce(
 );
 
 replaceOnce(
+  "let providerRequestsToday = 0;",
+  "let providerRequestsToday = 0;\nlet providerRemoteBlocked = false;",
+  'remote provider state'
+);
+
+replaceOnce(
+  "  if (today !== providerBudgetDay) { providerBudgetDay = today; providerRequestsToday = 0; }\n}\nfunction providerBudgetAvailable() { resetProviderBudgetIfNeeded(); return providerRequestsToday < PROVIDER_DAILY_BUDGET; }",
+  "  if (today !== providerBudgetDay) { providerBudgetDay = today; providerRequestsToday = 0; providerRemoteBlocked = false; }\n}\nfunction providerBudgetAvailable() { resetProviderBudgetIfNeeded(); return !providerRemoteBlocked && providerRequestsToday < PROVIDER_DAILY_BUDGET; }",
+  'effective provider availability'
+);
+
+replaceOnce(
   "function noteProviderRequest() { resetProviderBudgetIfNeeded(); providerRequestsToday += 1; }",
-  "function noteProviderRequest() { resetProviderBudgetIfNeeded(); providerRequestsToday += 1; }\nfunction providerBudgetRemaining() { resetProviderBudgetIfNeeded(); return Math.max(0, PROVIDER_DAILY_BUDGET - providerRequestsToday); }",
+  "function noteProviderRequest() { resetProviderBudgetIfNeeded(); providerRequestsToday += 1; }\nfunction providerBudgetRemaining() { resetProviderBudgetIfNeeded(); return providerRemoteBlocked ? 0 : Math.max(0, PROVIDER_DAILY_BUDGET - providerRequestsToday); }",
   'provider budget remaining'
+);
+
+replaceOnce(
+`    const response = await fetchWithTimeout(upstream,{headers:{'x-apisports-key':key,accept:'application/json','user-agent':'NinetyPlus-Backend/0.8 Railway'}},12000);\n    const body = await response.text();\n    return {status:response.status,ok:response.ok,body,remaining:response.headers.get('x-ratelimit-requests-remaining')};`,
+`    const response = await fetchWithTimeout(upstream,{headers:{'x-apisports-key':key,accept:'application/json','user-agent':'NinetyPlus-Backend/0.8 Railway'}},12000);\n    const body = await response.text();\n    let remoteDailyLimit = false;\n    try {\n      const payload = JSON.parse(body);\n      const errorText = JSON.stringify(payload?.errors || payload?.error || '').toLowerCase();\n      remoteDailyLimit = errorText.includes('request limit for the day') || (errorText.includes('requests') && errorText.includes('upgrade your plan'));\n    } catch {}\n    if (remoteDailyLimit) {\n      providerRemoteBlocked = true;\n      return {status:429,ok:false,body:JSON.stringify({error:'provider_daily_limit_reached'}),remaining:'0'};\n    }\n    return {status:response.status,ok:response.ok,body,remaining:response.headers.get('x-ratelimit-requests-remaining')};`,
+  'upstream daily limit detection'
 );
 
 replaceOnce(
@@ -54,14 +72,20 @@ replaceOnce(
 
 replaceOnce(
 `async function canonicalMatchDetail(id) {\n  let match=canonicalMatchIndex.get(id);\n  if (!match) throw Object.assign(new Error('match_not_indexed'),{status:404});\n  const cacheKey=\`v2:match:\${id}\`; const cached=getCached(cacheKey); if(cached) return JSON.parse(cached.body);\n  const espnPromise=espnMatchDetail(match).catch(()=>null);\n  let api=null; try { api=await apiMatchDetail(match); } catch { api=null; }\n  const espn=await espnPromise;\n  const detail={match,...mergeMatchDetails(api,espn),generatedAt:new Date().toISOString()};\n  putCache(cacheKey,{status:200,ok:true,body:JSON.stringify(detail)},20);\n  return detail;\n}`,
-`async function canonicalMatchDetail(id,date) {\n  let match=canonicalMatchIndex.get(id);\n  if (!match && /^\\d{4}-\\d{2}-\\d{2}$/.test(String(date||''))) {\n    try { await canonicalFixtures(String(date)); } catch {}\n    match=canonicalMatchIndex.get(id);\n  }\n  if (!match) throw Object.assign(new Error('match_not_indexed'),{status:404});\n  const cacheKey=\`v2:match:\${id}\`; const cached=getCached(cacheKey); if(cached) return JSON.parse(cached.body);\n  const espn=await espnMatchDetail(match).catch(()=>null);\n  const needs={events:!(espn?.events?.length),statistics:!(espn?.statistics?.length),lineups:!(espn?.lineups?.length)};\n  let api=null;\n  if ((needs.events || needs.statistics || needs.lineups) && providerBudgetRemaining()>0) {\n    try { api=await apiMatchDetail(match,needs); } catch { api=null; }\n  }\n  const detail={match,...mergeMatchDetails(api,espn),generatedAt:new Date().toISOString(),meta:{providerBudgetRemaining:providerBudgetRemaining()}};\n  putCache(cacheKey,{status:200,ok:true,body:JSON.stringify(detail)},20);\n  return detail;\n}`,
+`async function canonicalMatchDetail(id,date) {\n  let match=canonicalMatchIndex.get(id);\n  if (!match && /^\\d{4}-\\d{2}-\\d{2}$/.test(String(date||''))) {\n    try { await canonicalFixtures(String(date)); } catch {}\n    match=canonicalMatchIndex.get(id);\n  }\n  if (!match) throw Object.assign(new Error('match_not_indexed'),{status:404});\n  const cacheKey=\`v2:match:\${id}\`; const cached=getCached(cacheKey); if(cached) return JSON.parse(cached.body);\n  const espn=await espnMatchDetail(match).catch(()=>null);\n  const needs={events:!(espn?.events?.length),statistics:!(espn?.statistics?.length),lineups:!(espn?.lineups?.length)};\n  let api=null;\n  if ((needs.events || needs.statistics || needs.lineups) && providerBudgetRemaining()>0) {\n    try { api=await apiMatchDetail(match,needs); } catch { api=null; }\n  }\n  const detail={match,...mergeMatchDetails(api,espn),generatedAt:new Date().toISOString(),meta:{providerBudgetRemaining:providerBudgetRemaining(),providerRemoteBlocked}};\n  putCache(cacheKey,{status:200,ok:true,body:JSON.stringify(detail)},20);\n  return detail;\n}`,
   'self healing canonical match detail'
 );
 
 replaceOnce(
   "return sendJson(res,200,{ok:true,service:'ninetyplus-backend',version:'0.7'",
-  "return sendJson(res,200,{ok:true,service:'ninetyplus-backend',version:'0.8.1'",
+  "return sendJson(res,200,{ok:true,service:'ninetyplus-backend',version:'0.8.2'",
   'health version'
+);
+
+replaceOnce(
+  "providerRequestsToday,providerDailyBudget:PROVIDER_DAILY_BUDGET,time:new Date().toISOString()",
+  "providerRequestsToday,providerDailyBudget:PROVIDER_DAILY_BUDGET,providerRemoteBlocked,providerBudgetRemaining:providerBudgetRemaining(),time:new Date().toISOString()",
+  'health upstream state'
 );
 
 replaceOnce(
@@ -70,7 +94,7 @@ replaceOnce(
   'match date forwarding'
 );
 
-s = s.replace("90+ backend v0.7 listening", "90+ backend v0.8.1 listening");
+s = s.replace("90+ backend v0.7 listening", "90+ backend v0.8.2 listening");
 
 const generated = new URL('./.generated-server-v08.js', import.meta.url);
 await writeFile(generated, s, 'utf8');
