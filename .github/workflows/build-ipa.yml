@@ -15,6 +15,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Test page loading state
+        run: |
+          swiftc -parse-as-library Sources/Core/PageResource.swift Tests/PageResourceTests.swift -o /tmp/ninetyplus-state-tests
+          /tmp/ninetyplus-state-tests
+
+      - name: Test football response validation
+        run: |
+          swiftc -parse-as-library Sources/Core/FootballResponseGuard.swift Tests/FootballResponseGuardTests.swift -o /tmp/ninetyplus-response-tests
+          /tmp/ninetyplus-response-tests
+
       - name: Install XcodeGen
         run: brew install xcodegen
 
@@ -66,6 +76,7 @@ jobs:
             -scheme NinetyPlus \
             -configuration Release \
             -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
             -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \

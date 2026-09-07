@@ -4,23 +4,35 @@ import UserNotifications
 struct V2MatchesView: View {
     @StateObject private var store = APISportsStore.shared
     @State private var selectedDate = Calendar.current.startOfDay(for: Date())
-    @State private var matches: [APIPlusMatch] = []
+    @State private var dayAnchor = Calendar.current.startOfDay(for: Date())
+    @State private var resource = PageResource<[APIPlusMatch]>()
     @State private var filter = "الكل"
-    @State private var loading = false
+    @State private var retryID = 0
 
-    private var days: [Date] { (-3...3).compactMap { Calendar.current.date(byAdding: .day, value: $0, to: Date()) } }
+    private var selectedDay: Date { Calendar.current.startOfDay(for: selectedDate) }
+    private var dayKey: String { String(selectedDay.timeIntervalSince1970) }
+    private var hasValue: Bool { resource.key == dayKey && resource.value != nil }
+    private var matches: [APIPlusMatch] { hasValue ? (resource.value ?? []) : [] }
+    private var days: [Date] { (-3...3).compactMap { Calendar.current.date(byAdding: .day, value: $0, to: dayAnchor) } }
 
     private var filtered: [APIPlusMatch] {
         switch filter {
         case "مباشر": return matches.filter { store.isLive($0.status) }
-        case "القادمة": return matches.filter { $0.homeScore == nil && !["FT", "AET", "PEN"].contains($0.status.uppercased()) }
-        case "المنتهية": return matches.filter { ["FT", "AET", "PEN"].contains($0.status.uppercased()) }
+        case "القادمة": return matches.filter { FixturePhase.isUpcoming($0.status) }
+        case "المنتهية": return matches.filter { FixturePhase.isFinished($0.status) }
         default: return matches
         }
     }
 
-    private var grouped: [(String, [APIPlusMatch])] {
-        Dictionary(grouping: filtered, by: \.league).map { ($0.key, $0.value) }.sorted { $0.0 < $1.0 }
+    private struct LeagueGroup: Identifiable {
+        let id: String
+        let name: String
+        let items: [APIPlusMatch]
+    }
+    private var grouped: [LeagueGroup] {
+        Dictionary(grouping: filtered, by: { $0.leagueID ?? $0.league })
+            .map { LeagueGroup(id: $0.key, name: $0.value.first?.league ?? "", items: $0.value) }
+            .sorted { $0.name == $1.name ? $0.id < $1.id : $0.name < $1.name }
     }
 
     var body: some View {
@@ -44,29 +56,65 @@ struct V2MatchesView: View {
                         }.padding(.horizontal, 16)
                     }
                     SegmentBar(items: ["الكل", "مباشر", "القادمة", "المنتهية"], selected: $filter)
-                    if loading { ProgressView().tint(AppTheme.green).padding(40) }
-                    else if filtered.isEmpty { ContentUnavailableView("لا توجد مباريات", systemImage: "soccerball") }
-                    else {
-                        ForEach(grouped, id: \.0) { league, items in
-                            HStack { Text(league).font(.headline); Spacer(); Text("\(items.count)").foregroundStyle(AppTheme.muted) }.padding(.horizontal, 16)
-                            ForEach(items) { match in
-                                NavigationLink { V2MatchCenterView(match: match) } label: { APICompactMatchCard(match: match) }.buttonStyle(.plain)
-                            }
+                    PageLoadFeedback(
+                        loading: resource.isLoading || resource.key != dayKey,
+                        hasValue: hasValue,
+                        message: resource.key == dayKey ? resource.errorMessage : nil,
+                        updatedAt: hasValue ? resource.lastUpdated : nil
+                    ) { retryID += 1 }
+
+                    if hasValue && !resource.isLoading && resource.errorMessage == nil && filtered.isEmpty {
+                        ContentUnavailableView(
+                            matches.isEmpty ? "لا توجد مباريات منشورة لهذا اليوم" : "لا توجد مباريات تطابق هذا الفلتر",
+                            systemImage: "soccerball",
+                            description: Text("غيّر اليوم أو الفلتر، أو اسحب الصفحة للتحديث.")
+                        )
+                    }
+                    ForEach(grouped) { group in
+                        HStack {
+                            Text(group.name).font(.headline)
+                            Spacer()
+                            Text("\(group.items.count)").foregroundStyle(AppTheme.muted)
+                        }.padding(.horizontal, 16)
+                        ForEach(group.items) { match in
+                            NavigationLink { V2MatchCenterView(match: match) } label: {
+                                APICompactMatchCard(match: match)
+                            }.buttonStyle(.plain)
                         }
                     }
                 }.padding(.bottom, 30)
             }
             .background(AppTheme.bg.ignoresSafeArea())
-            .task { await load() }
-            .refreshable { await load() }
-            .onChange(of: selectedDate) { _, _ in Task { await load() } }
+            .task(id: "\(dayKey)|\(retryID)") { await load(force: retryID > 0) }
+            .refreshable { await load(force: true) }
+            .onDisappear { resource.invalidate() }
+            // Reuse the app's existing foreground refresh instead of a second timer.
+            .onReceive(store.$lastUpdated) { updatedAt in
+                guard let updatedAt, Calendar.current.isDateInToday(selectedDate),
+                      resource.key == dayKey, !resource.isLoading else { return }
+                let token = resource.begin(key: dayKey)
+                resource.succeed(store.today, token: token, at: updatedAt)
+            }
         }
     }
 
-    @MainActor private func load() async {
-        guard APIFootballClient.isConfigured else { matches = []; return }
-        loading = true; defer { loading = false }
-        matches = (try? await store.fixtures(date: selectedDate)) ?? []
+    @MainActor private func load(force: Bool = false) async {
+        let date = selectedDay
+        let key = dayKey
+        guard !Task.isCancelled else { return }
+        if !force && resource.isFresh(key: key, maxAge: 40) { return }
+        let token = resource.begin(key: key)
+        defer { resource.cancel(token: token) }
+        do {
+            guard APIFootballClient.isConfigured else { throw APIFootballError.missingConfiguration }
+            let result = try await store.fixtures(date: date)
+            try Task.checkCancellation()
+            guard dayKey == key else { return }
+            resource.succeed(result, token: token)
+        } catch {
+            guard !Task.isCancelled, !(error is CancellationError), dayKey == key else { return }
+            resource.fail(error.localizedDescription, token: token)
+        }
     }
 }
 

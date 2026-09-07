@@ -33,7 +33,10 @@ enum APIFootballClient {
     static let backendURLDefaultsName = "ninetyPlusBackendURL"
 
     static var currentSeason: Int {
-        let comps = Calendar.current.dateComponents([.year, .month], from: Date())
+        // Provider seasons are Gregorian even when iOS uses a Hijri calendar.
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "Asia/Riyadh") ?? .current
+        let comps = calendar.dateComponents([.year, .month], from: Date())
         let year = comps.year ?? 2026
         let month = comps.month ?? 8
         return month >= 7 ? year : year - 1
@@ -74,6 +77,9 @@ enum APIFootballClient {
         request.setValue("application/json", forHTTPHeaderField: "Accept")
 
         let data = try await perform(request, retryOnce: true)
+        try Task.checkCancellation()
+        // A provider can return HTTP 200 with an errors object and response: [].
+        try FootballResponseGuard.validate(data)
         do {
             return try JSONDecoder().decode(T.self, from: data)
         } catch {
@@ -82,8 +88,10 @@ enum APIFootballClient {
     }
 
     private static func perform(_ request: URLRequest, retryOnce: Bool) async throws -> Data {
+        try Task.checkCancellation()
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
+            try Task.checkCancellation()
             guard let http = response as? HTTPURLResponse else { throw APIFootballError.badResponse }
             switch http.statusCode {
             case 200..<300:
@@ -92,23 +100,27 @@ enum APIFootballClient {
                 throw APIFootballError.rateLimited
             case 500..<600:
                 if retryOnce {
-                    try? await Task.sleep(for: .milliseconds(650))
+                    try await Task.sleep(for: .milliseconds(650))
                     return try await perform(request, retryOnce: false)
                 }
                 throw APIFootballError.serviceUnavailable
             default:
                 throw APIFootballError.badResponse
             }
+        } catch is CancellationError {
+            throw CancellationError()
         } catch let error as APIFootballError {
             throw error
         } catch let error as URLError {
+            if error.code == .cancelled || Task.isCancelled { throw CancellationError() }
             let transient: Set<URLError.Code> = [.timedOut, .networkConnectionLost, .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed]
             if retryOnce, transient.contains(error.code) {
-                try? await Task.sleep(for: .milliseconds(650))
+                try await Task.sleep(for: .milliseconds(650))
                 return try await perform(request, retryOnce: false)
             }
             throw APIFootballError.serviceUnavailable
         } catch {
+            if Task.isCancelled { throw CancellationError() }
             throw APIFootballError.serviceUnavailable
         }
     }
