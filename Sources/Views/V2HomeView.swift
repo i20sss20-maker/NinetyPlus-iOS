@@ -29,7 +29,7 @@ struct V2HomeView: View {
             ScrollView {
                 LazyVStack(spacing: 18) {
                     TopBar(title: nil, showsLogo: true)
-                    if !APIFootballClient.isConfigured { setupCard } else {
+                    if !APIFootballClient.isConfigured { serviceUnavailableCard } else {
                         liveHero
                         forYouSection
                         todaySection
@@ -186,7 +186,15 @@ struct V2HomeView: View {
         favoriteUpcoming = combined.filter { seen.insert($0.id).inserted }.sorted { ($0.date ?? .distantFuture) < ($1.date ?? .distantFuture) }
     }
 
-    private var setupCard: some View { VStack(spacing: 14) { Image(systemName: "bolt.horizontal.circle.fill").font(.system(size: 46)).foregroundStyle(AppTheme.green); Text("تفعيل البيانات الرياضية").font(.title2.bold()); Text("هذه خطوة مؤقتة أثناء التطوير. في النسخة النهائية سيعمل 90+ مباشرة بدون أي إعداد من المستخدم.").font(.subheadline).foregroundStyle(AppTheme.muted).multilineTextAlignment(.center) }.padding(24).background(AppTheme.card, in: RoundedRectangle(cornerRadius: 24)).padding(.horizontal, 16) }
+    private var serviceUnavailableCard: some View {
+        VStack(spacing: 14) {
+            Image(systemName: "wifi.exclamationmark").font(.system(size: 46)).foregroundStyle(AppTheme.green)
+            Text("تعذر الاتصال بخدمة البيانات").font(.title2.bold())
+            Text("تحقق من اتصال الإنترنت وحاول التحديث بعد قليل.").font(.subheadline).foregroundStyle(AppTheme.muted).multilineTextAlignment(.center)
+        }
+        .padding(24).background(AppTheme.card, in: RoundedRectangle(cornerRadius: 24)).padding(.horizontal, 16)
+    }
+
     private func sectionHeader(_ title: String, subtitle: String?) -> some View { HStack(alignment: .firstTextBaseline) { Text(title).font(.title3.bold()); Spacer(); if let subtitle { Text(subtitle).font(.caption).foregroundStyle(AppTheme.muted) } }.padding(.horizontal, 16) }
     private func heroTeam(_ name: String, _ logo: String?) -> some View { VStack(spacing: 7) { RemoteBadge(url: logo).frame(width: 64, height: 64); Text(name).font(.subheadline.bold()).multilineTextAlignment(.center).lineLimit(2).frame(width: 100) } }
     private func quickCard(_ title: String, icon: String) -> some View { VStack(spacing: 9) { Image(systemName: icon).font(.title2.bold()).foregroundStyle(AppTheme.green); Text(title).font(.caption.bold()).foregroundStyle(.white).lineLimit(1) }.frame(width: 112, height: 88).background(AppTheme.card, in: RoundedRectangle(cornerRadius: 18)) }
