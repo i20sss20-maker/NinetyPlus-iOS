@@ -15,6 +15,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Apply deterministic release UI fixes
+        run: python3 scripts/apply_release_ui_fixes.py
+
       - name: Test page loading state
         run: |
           swiftc -parse-as-library Sources/Core/PageResource.swift Tests/PageResourceTests.swift -o /tmp/ninetyplus-state-tests
