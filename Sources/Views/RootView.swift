@@ -2,9 +2,6 @@ import SwiftUI
 
 struct RootView: View {
     @State private var selection = 0
-    @State private var showAPISetup = false
-    @AppStorage(APIFootballClient.keyDefaultsName) private var apiKey = ""
-    @AppStorage(APIFootballClient.backendURLDefaultsName) private var backendURL = ""
 
     var body: some View {
         TabView(selection: $selection) {
@@ -32,17 +29,7 @@ struct RootView: View {
         .background(AppTheme.bg.ignoresSafeArea())
         .environment(\.layoutDirection, .rightToLeft)
         .task {
-            showAPISetup = !APIFootballClient.isConfigured
-            if APIFootballClient.isConfigured { await APISportsStore.shared.refreshToday() }
+            await APISportsStore.shared.refreshToday()
         }
-        .onChange(of: apiKey) { _, _ in refreshConfiguration() }
-        .onChange(of: backendURL) { _, _ in refreshConfiguration() }
-        .sheet(isPresented: $showAPISetup) { APIKeySetupView() }
-    }
-
-    private func refreshConfiguration() {
-        showAPISetup = !APIFootballClient.isConfigured
-        guard APIFootballClient.isConfigured else { return }
-        Task { await APISportsStore.shared.refreshToday(force: true) }
     }
 }
