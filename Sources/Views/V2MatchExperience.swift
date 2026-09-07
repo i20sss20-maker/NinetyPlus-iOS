@@ -88,7 +88,6 @@ struct V2MatchesView: View {
             .task(id: "\(dayKey)|\(retryID)") { await load(force: retryID > 0) }
             .refreshable { await load(force: true) }
             .onDisappear { resource.invalidate() }
-            // Reuse the app's existing foreground refresh instead of a second timer.
             .onReceive(store.$lastUpdated) { updatedAt in
                 guard let updatedAt, Calendar.current.isDateInToday(selectedDate),
                       resource.key == dayKey, !resource.isLoading else { return }
@@ -128,29 +127,69 @@ final class V2MatchCenterStore: ObservableObject {
     @Published var loading = false
     @Published var lastLiveUpdate: Date?
     @Published var liveError: String?
+    @Published var sectionErrors: [String: String] = [:]
 
     private var lastObserved: APIPlusMatch?
 
+    private struct FetchResult<T> {
+        let value: T?
+        let error: String?
+    }
+
+    private func capture<T>(_ work: () async throws -> T) async -> FetchResult<T> {
+        do { return FetchResult(value: try await work(), error: nil) }
+        catch { return FetchResult(value: nil, error: error.localizedDescription) }
+    }
+
     func load(_ match: APIPlusMatch) async {
-        loading = true; defer { loading = false }
+        loading = true
+        liveError = nil
+        sectionErrors = [:]
         current = match
         lastObserved = match
+        defer { loading = false }
 
-        async let fixture: APIEnvelope<[APIFixture]>? = try? APIFootballClient.get("fixtures", query: [.init(name: "id", value: match.id)])
-        async let e: APIEnvelope<[APIEventItem]>? = try? APIFootballClient.get("fixtures/events", query: [.init(name: "fixture", value: match.id)])
-        async let s: APIEnvelope<[APIStatisticTeam]>? = try? APIFootballClient.get("fixtures/statistics", query: [.init(name: "fixture", value: match.id)])
-        async let l: APIEnvelope<[APILineupItem]>? = try? APIFootballClient.get("fixtures/lineups", query: [.init(name: "fixture", value: match.id)])
-        async let h: APIEnvelope<[APIFixture]>? = {
+        async let fixture: FetchResult<APIEnvelope<[APIFixture]>> = capture {
+            try await APIFootballClient.get("fixtures", query: [.init(name: "id", value: match.id)])
+        }
+        async let e: FetchResult<APIEnvelope<[APIEventItem]>> = capture {
+            try await APIFootballClient.get("fixtures/events", query: [.init(name: "fixture", value: match.id)])
+        }
+        async let s: FetchResult<APIEnvelope<[APIStatisticTeam]>> = capture {
+            try await APIFootballClient.get("fixtures/statistics", query: [.init(name: "fixture", value: match.id)])
+        }
+        async let l: FetchResult<APIEnvelope<[APILineupItem]>> = capture {
+            try await APIFootballClient.get("fixtures/lineups", query: [.init(name: "fixture", value: match.id)])
+        }
+        async let h: FetchResult<APIEnvelope<[APIFixture]>>? = {
             guard let home = match.homeID, let away = match.awayID else { return nil }
-            return try? await APIFootballClient.get("fixtures/headtohead", query: [.init(name: "h2h", value: "\(home)-\(away)"), .init(name: "last", value: "5")])
+            return await capture {
+                try await APIFootballClient.get("fixtures/headtohead", query: [.init(name: "h2h", value: "\(home)-\(away)"), .init(name: "last", value: "5")])
+            }
         }()
 
         let result = await (fixture, e, s, l, h)
-        if let item = result.0?.response.first { current = map(item) }
-        events = result.1?.response ?? []
-        stats = result.2?.response ?? []
-        lineups = result.3?.response ?? []
-        h2h = (result.4?.response ?? []).map(map)
+        if let item = result.0.value?.response.first { current = map(item) }
+        if let message = result.0.error { sectionErrors["fixture"] = message }
+
+        if let value = result.1.value { events = value.response }
+        if let message = result.1.error { sectionErrors["events"] = message }
+
+        if let value = result.2.value { stats = value.response }
+        if let message = result.2.error { sectionErrors["stats"] = message }
+
+        if let value = result.3.value { lineups = value.response }
+        if let message = result.3.error { sectionErrors["lineups"] = message }
+
+        if let hResult = result.4 {
+            if let value = hResult.value { h2h = value.response.map(map) }
+            if let message = hResult.error { sectionErrors["h2h"] = message }
+        }
+
+        let failed = sectionErrors.count
+        if failed > 0 {
+            liveError = failed == 1 ? "تعذر تحميل جزء واحد من بيانات المباراة." : "تعذر تحميل \(failed) أجزاء من بيانات المباراة. البيانات الأخرى ما زالت معروضة."
+        }
         lastObserved = current
         lastLiveUpdate = Date()
     }
@@ -169,10 +208,13 @@ final class V2MatchCenterStore: ObservableObject {
             }
             events = result.1.response
             stats = result.2.response
+            sectionErrors["fixture"] = nil
+            sectionErrors["events"] = nil
+            sectionErrors["stats"] = nil
             lastLiveUpdate = Date()
             liveError = nil
         } catch {
-            liveError = "تعذر التحديث اللحظي مؤقتًا"
+            liveError = "تعذر التحديث اللحظي مؤقتًا. آخر بيانات صحيحة ما زالت معروضة."
         }
     }
 
@@ -253,7 +295,7 @@ struct V2MatchCenterView: View {
                 await store.refreshLive(match)
             }
         }
-        .refreshable { await store.refreshLive(match) }
+        .refreshable { await store.load(match) }
     }
 
     private var header: some View {
@@ -309,7 +351,15 @@ struct V2MatchCenterView: View {
             infoRow("الحالة", statusText(m)); infoRow("البطولة", m.league)
             if let date = m.date { infoRow("الموعد", date.formatted(date: .abbreviated, time: .shortened)) }
             infoRow("الأحداث المتاحة", "\(store.events.count)"); infoRow("التشكيلات", "\(store.lineups.count)"); infoRow("مواجهات سابقة", "\(store.h2h.count)")
-            if let error = store.liveError { Text(error).font(.caption).foregroundStyle(AppTheme.muted) }
+            if let error = store.liveError {
+                VStack(spacing: 8) {
+                    Label(error, systemImage: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(.orange)
+                    Button { Task { await store.load(match) } } label: {
+                        Label("إعادة تحميل بيانات المباراة", systemImage: "arrow.clockwise")
+                            .font(.caption.bold()).foregroundStyle(AppTheme.green)
+                    }
+                }.frame(maxWidth: .infinity)
+            }
         }.padding(16).background(AppTheme.card, in: RoundedRectangle(cornerRadius: 18)).padding(.horizontal, 16)
     }
 
@@ -320,13 +370,17 @@ struct V2MatchCenterView: View {
             if !keyFacts.isEmpty {
                 VStack(spacing: 10) { ForEach(keyFacts, id: \.self) { fact in HStack(alignment: .top, spacing: 10) { Image(systemName: "checkmark.circle.fill").foregroundStyle(AppTheme.green); Text(fact).font(.subheadline); Spacer(minLength: 0) } } }
             }
+            if !store.sectionErrors.isEmpty {
+                Label("بعض مصادر بيانات هذه المباراة لم تستجب، لذلك التحليل يستخدم الأجزاء التي وصلت فقط.", systemImage: "info.circle")
+                    .font(.caption).foregroundStyle(.orange)
+            }
             Text("90+ لا يخمّن أرقامًا غير موجودة في المصدر. إذا لم تتوفر الإحصائيات، يظهر ذلك بوضوح.").font(.caption).foregroundStyle(AppTheme.muted)
         }.padding(16).background(AppTheme.card, in: RoundedRectangle(cornerRadius: 18)).padding(.horizontal, 16)
     }
 
     private var eventsView: some View {
         VStack(spacing: 0) {
-            if store.events.isEmpty { unavailable("لا توجد أحداث منشورة") }
+            if store.events.isEmpty { sectionUnavailable("لا توجد أحداث منشورة", key: "events") }
             else { ForEach(Array(store.events.enumerated()), id: \.offset) { _, event in
                 HStack { Text("\(event.time.elapsed ?? 0)′").foregroundStyle(AppTheme.green).frame(width: 42); VStack(alignment: .leading) { Text(event.player.name ?? event.team.name ?? "حدث").bold(); Text(event.detail ?? event.type ?? "").font(.caption).foregroundStyle(AppTheme.muted) }; Spacer() }.padding(12); Divider().overlay(Color.white.opacity(0.08))
             } }
@@ -335,7 +389,7 @@ struct V2MatchCenterView: View {
 
     private var statsView: some View {
         VStack(spacing: 12) {
-            if store.stats.isEmpty { unavailable("الإحصائيات غير متاحة") }
+            if store.stats.isEmpty { sectionUnavailable("الإحصائيات غير متاحة من المصدر", key: "stats") }
             else { ForEach(Array(store.stats.enumerated()), id: \.offset) { _, teamStats in
                 VStack(alignment: .leading, spacing: 8) {
                     Text(teamStats.team.name ?? "فريق").font(.headline).foregroundStyle(AppTheme.green)
@@ -347,7 +401,7 @@ struct V2MatchCenterView: View {
 
     private var lineupsView: some View {
         VStack(spacing: 12) {
-            if store.lineups.isEmpty { unavailable("التشكيلة غير متاحة") }
+            if store.lineups.isEmpty { sectionUnavailable("التشكيلة غير منشورة حاليًا", key: "lineups") }
             else { ForEach(Array(store.lineups.enumerated()), id: \.offset) { _, lineup in
                 VStack(alignment: .leading, spacing: 8) {
                     Text("\(lineup.team.name ?? "فريق") • \(lineup.formation ?? "")").font(.headline).foregroundStyle(AppTheme.green)
@@ -358,7 +412,7 @@ struct V2MatchCenterView: View {
     }
 
     private var h2hView: some View {
-        VStack(spacing: 10) { if store.h2h.isEmpty { unavailable("لا توجد مواجهات سابقة متاحة") } else { ForEach(store.h2h) { APICompactMatchCard(match: $0) } } }
+        VStack(spacing: 10) { if store.h2h.isEmpty { sectionUnavailable("لا توجد مواجهات سابقة منشورة", key: "h2h") } else { ForEach(store.h2h) { APICompactMatchCard(match: $0) } } }
     }
 
     private var factualSummary: String {
@@ -391,6 +445,21 @@ struct V2MatchCenterView: View {
             if granted { notificationsEnabled = true }
         }
         followedMatchIDs = ids.sorted().joined(separator: ",")
+    }
+
+    @ViewBuilder private func sectionUnavailable(_ fallback: String, key: String) -> some View {
+        if let message = store.sectionErrors[key] {
+            VStack(spacing: 10) {
+                Image(systemName: "wifi.exclamationmark").font(.title2).foregroundStyle(.orange)
+                Text("تعذر تحميل هذا القسم").font(.headline)
+                Text(message).font(.caption).foregroundStyle(AppTheme.muted).multilineTextAlignment(.center)
+                Button { Task { await store.load(match) } } label: {
+                    Label("إعادة المحاولة", systemImage: "arrow.clockwise").font(.caption.bold()).foregroundStyle(AppTheme.green)
+                }
+            }.frame(maxWidth: .infinity).padding(24)
+        } else {
+            unavailable(fallback)
+        }
     }
 
     private func team(_ name: String, _ logo: String?) -> some View { VStack(spacing: 7) { RemoteBadge(url: logo).frame(width: 68, height: 68); Text(name).font(.subheadline.bold()).multilineTextAlignment(.center).lineLimit(2).frame(width: 105) } }
