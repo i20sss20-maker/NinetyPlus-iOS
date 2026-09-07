@@ -1,91 +1,161 @@
 import SwiftUI
 import Foundation
 
-struct NewsItem: Identifiable, Hashable {
-    let id = UUID(); let title: String; let subtitle: String; let image: String; let tag: String
-}
-struct MatchItem: Identifiable, Hashable {
-    let id = UUID(); let home: String; let away: String; let homeScore: Int?; let awayScore: Int?; let minute: String
-}
-struct TransferItem: Identifiable, Hashable {
-    let id = UUID(); let player: String; let from: String; let to: String; let status: String; let probability: Int
-}
-
-enum MockData {
-    static let news: [NewsItem] = [
-        .init(title: "النجم يعود بقوة", subtitle: "بعد فترة غياب طويلة.. جاهز لقيادة فريقه في المواجهة القادمة", image: "soccerball", tag: "حصري"),
-        .init(title: "مدرب الفريق: نثق في قدرتنا على تحقيق اللقب", subtitle: "منذ 3 ساعات", image: "sportscourt", tag: "خبر"),
-        .init(title: "ملعب المدينة يستعد لاستضافة القمة المنتظرة", subtitle: "منذ 5 ساعات", image: "building.columns", tag: "خبر"),
-        .init(title: "موهبة شابة تخطف الأنظار في الدوري المحلي", subtitle: "منذ 6 ساعات", image: "figure.soccer", tag: "تقرير")
-    ]
-    static let matches: [MatchItem] = [
-        .init(home: "النسر", away: "الهلال", homeScore: 2, awayScore: 1, minute: "78'"),
-        .init(home: "الوحدة", away: "الريان", homeScore: nil, awayScore: nil, minute: "10:00 مساءً"),
-        .init(home: "الاتحاد", away: "القادسية", homeScore: nil, awayScore: nil, minute: "غداً")
-    ]
-    static let transfers: [TransferItem] = [
-        .init(player: "علي الحربي", from: "نادي العاصمة", to: "النخبة", status: "صفقة رسمية", probability: 100),
-        .init(player: "ماركو فييرا", from: "نادي القوة", to: "الاتحاد", status: "مفاوضات متقدمة", probability: 80),
-        .init(player: "سالم العنزي", from: "نادي النخبة", to: "الهلال", status: "اهتمام جاد", probability: 65),
-        .init(player: "إسماعيل كوني", from: "نادي الشرق", to: "النصر", status: "مفاوضات أولية", probability: 40),
-        .init(player: "لوكا مارتينيز", from: "نادي القمة", to: "الهلال", status: "شائعة", probability: 20)
-    ]
-}
-
 enum AppTheme {
-    static let green = Color(red: 0.04, green: 0.92, blue: 0.48)
-    static let bg = Color(red: 0.015, green: 0.055, blue: 0.065)
-    static let card = Color(red: 0.025, green: 0.10, blue: 0.115)
-    static let soft = Color.white.opacity(0.07)
-    static let muted = Color.white.opacity(0.58)
+    static let green = Color(red: 0.06, green: 0.92, blue: 0.49)
+    static let greenDeep = Color(red: 0.01, green: 0.38, blue: 0.22)
+    static let bg = Color(red: 0.009, green: 0.035, blue: 0.043)
+    static let card = Color(red: 0.022, green: 0.075, blue: 0.086)
+    static let cardRaised = Color(red: 0.03, green: 0.095, blue: 0.108)
+    static let soft = Color.white.opacity(0.065)
+    static let border = Color.white.opacity(0.075)
+    static let muted = Color.white.opacity(0.62)
+    static let dimmed = Color.white.opacity(0.40)
 }
 
-struct BrandLogo: View {
-    var body: some View {
-        HStack(spacing: 2) {
-            Text("90").font(.system(size: 42, weight: .black, design: .rounded)).italic()
-            Text("+").font(.system(size: 36, weight: .black, design: .rounded)).foregroundStyle(AppTheme.green).offset(y: -2)
-        }.accessibilityLabel("90+")
+enum SportsArabic {
+    private static let leagueMap: [String: String] = [
+        "Saudi Pro League": "دوري روشن السعودي",
+        "Pro League": "دوري روشن السعودي",
+        "King's Cup": "كأس خادم الحرمين الشريفين",
+        "AFC Champions League Elite": "دوري أبطال آسيا للنخبة",
+        "AFC Champions League": "دوري أبطال آسيا",
+        "Premier League": "الدوري الإنجليزي الممتاز",
+        "La Liga": "الدوري الإسباني",
+        "Bundesliga": "الدوري الألماني",
+        "Serie A": "الدوري الإيطالي",
+        "Ligue 1": "الدوري الفرنسي",
+        "UEFA Champions League": "دوري أبطال أوروبا",
+        "UEFA Europa League": "الدوري الأوروبي"
+    ]
+
+    private static let teamMap: [String: String] = [
+        "Al-Hilal Saudi FC": "الهلال",
+        "Al Hilal": "الهلال",
+        "Al-Nassr": "النصر",
+        "Al Nassr": "النصر",
+        "Al-Ittihad FC": "الاتحاد",
+        "Al Ittihad": "الاتحاد",
+        "Al-Ahli Jeddah": "الأهلي",
+        "Al Ahli": "الأهلي",
+        "Al-Qadisiyah FC": "القادسية",
+        "Al-Qadisiyah": "القادسية",
+        "Al-Ettifaq": "الاتفاق",
+        "Al-Shabab": "الشباب",
+        "Al-Taawoun": "التعاون",
+        "Al-Fateh": "الفتح",
+        "Al-Fayha": "الفيحاء",
+        "Al-Khaleej Saihat": "الخليج",
+        "Al-Raed": "الرائد",
+        "Damac": "ضمك",
+        "Al Riyadh": "الرياض",
+        "Al-Okhdood": "الأخدود",
+        "Al-Kholood": "الخلود",
+        "NEOM": "نيوم",
+        "Real Madrid": "ريال مدريد",
+        "Barcelona": "برشلونة",
+        "Manchester City": "مانشستر سيتي",
+        "Manchester United": "مانشستر يونايتد",
+        "Liverpool": "ليفربول",
+        "Arsenal": "أرسنال",
+        "Chelsea": "تشيلسي",
+        "Bayern Munich": "بايرن ميونخ",
+        "Paris Saint Germain": "باريس سان جيرمان",
+        "Inter": "إنتر",
+        "AC Milan": "ميلان",
+        "Juventus": "يوفنتوس"
+    ]
+
+    static func league(_ value: String) -> String {
+        leagueMap[value.trimmingCharacters(in: .whitespacesAndNewlines)] ?? value
+    }
+
+    static func team(_ value: String) -> String {
+        teamMap[value.trimmingCharacters(in: .whitespacesAndNewlines)] ?? value
+    }
+
+    static func country(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let map: [String: String] = [
+            "Saudi-Arabia": "السعودية", "Saudi Arabia": "السعودية", "England": "إنجلترا",
+            "Spain": "إسبانيا", "Germany": "ألمانيا", "Italy": "إيطاليا", "France": "فرنسا",
+            "Portugal": "البرتغال", "Brazil": "البرازيل", "Argentina": "الأرجنتين"
+        ]
+        return map[value] ?? value
     }
 }
 
-struct TopBar: View {
-    let title: String?; var showsLogo = false
+struct BrandLogo: View {
+    var compact = false
+
     var body: some View {
-        HStack {
-            Button(action: {}) { Image(systemName: "magnifyingglass").font(.title3) }
-            Spacer()
-            if showsLogo { BrandLogo() } else if let title { Text(title).font(.title2.bold()) }
-            Spacer()
-            Button(action: {}) { Image(systemName: "bell").font(.title3) }
-        }.foregroundStyle(.white).padding(.horizontal, 18).padding(.top, 6)
+        HStack(spacing: 1) {
+            Text("90")
+                .font(.system(size: compact ? 30 : 39, weight: .black, design: .rounded))
+                .tracking(-2)
+            Text("+")
+                .font(.system(size: compact ? 25 : 33, weight: .black, design: .rounded))
+                .foregroundStyle(AppTheme.green)
+                .offset(y: -2)
+        }
+        .accessibilityLabel("90+")
+    }
+}
+
+/// Header without decorative buttons that do nothing. Navigation actions live where
+/// they have a real destination in each screen.
+struct TopBar: View {
+    let title: String?
+    var showsLogo = false
+    var subtitle: String? = nil
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 12) {
+            if showsLogo {
+                BrandLogo()
+            } else if let title {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.system(size: 26, weight: .bold, design: .rounded))
+                    if let subtitle {
+                        Text(subtitle)
+                            .font(.caption)
+                            .foregroundStyle(AppTheme.muted)
+                    }
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .foregroundStyle(.white)
+        .padding(.horizontal, 18)
+        .padding(.top, 8)
+        .padding(.bottom, 2)
     }
 }
 
 struct SegmentBar: View {
-    let items: [String]; @Binding var selected: String
+    let items: [String]
+    @Binding var selected: String
+
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
                 ForEach(items, id: \.self) { item in
-                    Button(item) { selected = item }
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(selected == item ? .black : .white)
-                        .padding(.horizontal, 16).padding(.vertical, 10)
-                        .background(selected == item ? AppTheme.green : AppTheme.soft, in: RoundedRectangle(cornerRadius: 10))
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.16)) { selected = item }
+                    } label: {
+                        Text(item)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(selected == item ? .black : .white)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
+                            .background(selected == item ? AppTheme.green : AppTheme.soft, in: Capsule())
+                            .overlay(Capsule().stroke(selected == item ? Color.clear : AppTheme.border, lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
                 }
-            }.padding(.horizontal, 16)
+            }
+            .padding(.horizontal, 16)
         }
-    }
-}
-
-final class APIClient {
-    static let shared = APIClient(); private init() {}
-    var baseURL = URL(string: "https://api.example.com")!
-    func request<T: Decodable>(_ path: String, as type: T.Type) async throws -> T {
-        let url = baseURL.appending(path: path)
-        let (data, response) = try await URLSession.shared.data(from: url)
-        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { throw URLError(.badServerResponse) }
-        return try JSONDecoder().decode(T.self, from: data)
     }
 }
