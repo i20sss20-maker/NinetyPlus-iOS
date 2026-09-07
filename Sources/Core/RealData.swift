@@ -3,16 +3,8 @@ import SwiftUI
 import UIKit
 import ImageIO
 
-private struct EditorialFeedSnapshot: Codable {
-    let articles: [RealArticle]
-    let fetchedAt: Date
-}
-private struct EditorialFeedDefinition: Sendable {
-    let id: String
-    let url: URL
-    let source: String
-    let transfers: Bool
-}
+private struct EditorialFeedSnapshot: Codable { let articles: [RealArticle]; let fetchedAt: Date }
+private struct EditorialFeedDefinition: Sendable { let id: String; let url: URL; let source: String; let transfers: Bool }
 
 @MainActor
 final class EditorialStore: ObservableObject {
@@ -25,7 +17,7 @@ final class EditorialStore: ObservableObject {
     @Published private(set) var lastUpdated: Date?
     private var snapshots: [String: EditorialFeedSnapshot] = [:]
     private var failures: [String: String] = [:]
-    private let cacheKey = "ninetyplus.editorial.cache.v3"
+    private let cacheKey = "ninetyplus.editorial.cache.v4"
     private init() {
         if let data = UserDefaults.standard.data(forKey: cacheKey),
            let cached = try? JSONDecoder().decode([String: EditorialFeedSnapshot].self, from: data) { snapshots = cached }
@@ -37,9 +29,11 @@ final class EditorialStore: ObservableObject {
             url.queryItems = [.init(name: "q", value: query), .init(name: "hl", value: "ar"), .init(name: "gl", value: "SA"), .init(name: "ceid", value: "SA:ar")]
             return url.url!
         }
+        // Each publisher feed and one actual image were checked before inclusion.
         return [
-            .init(id: "saudi", url: google("\"دوري روشن\" OR \"الدوري السعودي\" OR \"الهلال السعودي\" OR \"النصر السعودي\" OR \"الاتحاد السعودي\""), source: "أخبار كرة القدم", transfers: false),
-            .init(id: "arab-football", url: URL(string: "https://www.filgoal.com/section/9/rss/الوطن-العربي")!, source: "في الجول", transfers: false),
+            .init(id: "hihi2", url: URL(string: "https://hihi2.com/feed")!, source: "هاي كورة", transfers: false),
+            .init(id: "france24", url: URL(string: "https://www.france24.com/ar/رياضة/rss")!, source: "فرانس 24", transfers: false),
+            .init(id: "saudi", url: google("\"دوري روشن\" OR \"الدوري السعودي\" OR \"الهلال السعودي\" OR \"النصر السعودي\""), source: "أخبار كرة القدم", transfers: false),
             .init(id: "transfers", url: google("انتقالات كرة القدم OR صفقات الدوري السعودي"), source: "أخبار الانتقالات", transfers: true)
         ]
     }
@@ -73,15 +67,13 @@ final class EditorialStore: ObservableObject {
     }
     nonisolated private static func fetch(_ feed: EditorialFeedDefinition) async throws -> [RealArticle] {
         var request = URLRequest(url: feed.url)
-        request.timeoutInterval = 15
-        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.timeoutInterval = 15; request.cachePolicy = .reloadIgnoringLocalCacheData
         request.setValue("NinetyPlus/2.0 RSS Reader", forHTTPHeaderField: "User-Agent")
         request.setValue("application/rss+xml, application/xml, text/xml", forHTTPHeaderField: "Accept")
         let (data, response) = try await URLSession.shared.data(for: request)
         try Task.checkCancellation()
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { throw URLError(.badServerResponse) }
-        let articles = try EditorialRSSParser(data: data, source: feed.source).parse()
-        return Array(articles.prefix(60))
+        return Array(try EditorialRSSParser(data: data, source: feed.source).parse().prefix(60))
     }
     private func assemble() {
         var existingIDs: [URL: UUID] = [:]
@@ -96,19 +88,15 @@ final class EditorialStore: ObservableObject {
             var seen = Set<URL>()
             for article in candidates {
                 guard let url = article.url, !article.title.isEmpty, seen.insert(url).inserted else { continue }
-                let item = RealArticle(id: existingIDs[url] ?? article.id, title: article.title, source: article.source,
-                                       date: article.date, url: url, imageURL: article.imageURL)
-                result.append(item)
+                result.append(RealArticle(id: existingIDs[url] ?? article.id, title: article.title, source: article.source,
+                                          date: article.date, url: url, imageURL: article.imageURL))
                 if result.count == 100 { break }
             }
             return result
         }
-        news = combine(false)
-        transfers = combine(true)
+        news = combine(false); transfers = combine(true)
         var newsFailures: [String] = []
-        for feed in Self.feeds where !feed.transfers {
-            if let message = failures[feed.id] { newsFailures.append(message) }
-        }
+        for feed in Self.feeds where !feed.transfers { if let message = failures[feed.id] { newsFailures.append(message) } }
         newsError = newsFailures.isEmpty ? nil : newsFailures.joined(separator: " ")
         errorMessage = failures.isEmpty ? nil : "تعذر تحديث بعض المصادر؛ الأخبار التي وصلت ما زالت معروضة."
         lastUpdated = snapshots.values.map(\.fetchedAt).min()
@@ -159,12 +147,10 @@ private struct SportsNetworkImage: View {
                     Image(uiImage: image).resizable().aspectRatio(contentMode: fit ? .fit : .fill)
                         .frame(width: geometry.size.width, height: geometry.size.height).clipped()
                         .accessibilityIdentifier("sports.image.loaded")
-                } else if url != nil && !failed {
-                    ProgressView().tint(AppTheme.green).scaleEffect(0.7)
-                } else {
+                } else if url != nil && !failed { ProgressView().tint(AppTheme.greenDeep).scaleEffect(0.7) }
+                else {
                     Image(systemName: fallback).resizable().scaledToFit()
-                        .padding(max(3, min(geometry.size.width, geometry.size.height) * 0.22))
-                        .foregroundStyle(AppTheme.muted)
+                        .padding(max(3, min(geometry.size.width, geometry.size.height) * 0.22)).foregroundStyle(.gray)
                 }
             }.frame(width: geometry.size.width, height: geometry.size.height)
         }
@@ -194,7 +180,7 @@ struct RemoteBadge: View {
                     .background(AppTheme.cardRaised).clipShape(Circle()).overlay(Circle().stroke(AppTheme.border))
             } else {
                 SportsNetworkImage(url: EditorialRSSParser.webURL(url), fit: true, fallback: isLeague ? "trophy" : "shield")
-                    .padding(3).background(Color.white.opacity(0.06)).clipShape(RoundedRectangle(cornerRadius: 10))
+                    .padding(4).background(Color.white.opacity(0.94)).clipShape(RoundedRectangle(cornerRadius: 10))
             }
         }.accessibilityHidden(true)
     }

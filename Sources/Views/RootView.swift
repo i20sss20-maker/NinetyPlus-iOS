@@ -13,20 +13,19 @@ struct RootView: View {
             EnhancedNewsView().tag(3).tabItem { Label("الأخبار", systemImage: "newspaper.fill") }
             V2MoreView().tag(4).tabItem { Label("المزيد", systemImage: "square.grid.2x2.fill") }
         }
-        .tint(AppTheme.green)
-        .background(AppTheme.bg.ignoresSafeArea())
-        .environment(\.locale, Locale(identifier: "ar_SA"))
+        .tint(AppTheme.green).background(AppTheme.bg.ignoresSafeArea())
+        .environment(\.locale, SportsDisplayDate.locale)
+        .environment(\.calendar, SportsDisplayDate.calendar)
+        .environment(\.timeZone, SportsDisplayDate.calendar.timeZone)
         .environment(\.layoutDirection, .rightToLeft)
         .safeAreaInset(edge: .top, spacing: 0) {
             if !network.isOnline {
                 Label("لا يوجد اتصال بالإنترنت. نعرض آخر بيانات متاحة.", systemImage: "wifi.slash")
-                    .font(.caption).foregroundStyle(.white).frame(maxWidth: .infinity)
-                    .padding(10).background(Color.orange.opacity(0.85))
+                    .font(.caption).foregroundStyle(.white).frame(maxWidth: .infinity).padding(10).background(Color.orange.opacity(0.85))
             }
         }
         .task { network.start() }
         .task(id: "\(scenePhase == .active):\(network.isOnline):\(selection)") {
-            // No background polling while the reader is in news, search or settings.
             guard scenePhase == .active, network.isOnline, selection == 0 || selection == 1 else { return }
             await refreshNow()
             while !Task.isCancelled {

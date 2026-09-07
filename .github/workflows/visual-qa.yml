@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths: ['Sources/**', 'UITests/**', 'Tests/EditorialFeedTests.swift', 'project.yml', '.github/workflows/visual-qa.yml', 'scripts/probe_dashboard.py']
+    paths: ['Sources/**', 'UITests/**', 'Tests/EditorialFeedTests.swift', 'Tests/PublicSourceTests.swift', 'project.yml', '.github/workflows/visual-qa.yml', 'scripts/probe_dashboard.py']
 concurrency:
   group: visual-qa-${{ github.ref }}
   cancel-in-progress: true
@@ -22,6 +22,16 @@ jobs:
           mkdir -p evidence
           python3 scripts/probe_dashboard.py > evidence/source-check.json
           cat evidence/source-check.json
+      - name: Test actual current-season table and identifiers
+        run: |
+          swiftc -swift-version 5 -parse-as-library Sources/Core/PublicLeagueTable.swift Tests/PublicSourceTests.swift -o /tmp/public-tests
+          if [ -s evidence/public-table.json ]; then /tmp/public-tests evidence/public-table.json; else /tmp/public-tests; fi
+      - name: Upload source diagnostics early
+        uses: actions/upload-artifact@v4
+        with:
+          name: NinetyPlus-Data-Diagnostics
+          path: evidence/*.json
+          retention-days: 7
       - name: Install XcodeGen
         run: brew install xcodegen
       - name: Generate project
@@ -31,13 +41,16 @@ jobs:
           xcrun simctl list devices available -j > /tmp/devices.json
           python3 - <<'PY' >> "$GITHUB_ENV"
           import json
-          devices = json.load(open('/tmp/devices.json'))['devices']
-          choices = [d for runtime, values in devices.items() if 'iOS-18' in runtime for d in values if 'iPhone' in d['name']]
-          if not choices:
-              choices = [d for values in devices.values() for d in values if 'iPhone' in d['name']]
-          device = next((d for d in choices if d['name'] == 'iPhone 16 Pro'), choices[0])
-          print('SIMULATOR_ID=' + device['udid'])
+          devices=json.load(open('/tmp/devices.json'))['devices']
+          choices=[d for runtime, values in devices.items() if 'iOS-18' in runtime for d in values if 'iPhone' in d['name']]
+          if not choices: choices=[d for values in devices.values() for d in values if 'iPhone' in d['name']]
+          device=next((d for d in choices if d['name']=='iPhone 16 Pro'), choices[0])
+          print('SIMULATOR_ID='+device['udid'])
           PY
+      - name: Build app and UI tests before boot
+        run: |
+          set -o pipefail
+          xcodebuild build-for-testing -project NinetyPlus.xcodeproj -scheme NinetyPlus -configuration Debug -destination "id=$SIMULATOR_ID" -derivedDataPath visual-build CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO | tee evidence/ui-build.log
       - name: Boot simulator
         run: |
           xcrun simctl boot "$SIMULATOR_ID" || true
@@ -46,13 +59,11 @@ jobs:
       - name: Run Arabic UI journey with real network data
         run: |
           set -o pipefail
-          xcodebuild test -project NinetyPlus.xcodeproj -scheme NinetyPlus -configuration Debug -destination "id=$SIMULATOR_ID" -derivedDataPath visual-build -resultBundlePath evidence/VisualQA.xcresult -only-testing:NinetyPlusUITests -parallel-testing-enabled NO CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO | tee evidence/ui-test.log
+          xcodebuild test-without-building -project NinetyPlus.xcodeproj -scheme NinetyPlus -configuration Debug -destination "id=$SIMULATOR_ID" -derivedDataPath visual-build -resultBundlePath evidence/VisualQA.xcresult -only-testing:NinetyPlusUITests -parallel-testing-enabled NO CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO | tee evidence/ui-test.log
       - name: Export screenshots
         if: always()
         run: |
-          if [ -d evidence/VisualQA.xcresult ]; then
-            xcrun xcresulttool export attachments --path evidence/VisualQA.xcresult --output-path evidence/screenshots || true
-          fi
+          if [ -d evidence/VisualQA.xcresult ]; then xcrun xcresulttool export attachments --path evidence/VisualQA.xcresult --output-path evidence/screenshots || true; fi
       - name: Upload visual evidence
         if: always()
         uses: actions/upload-artifact@v4
