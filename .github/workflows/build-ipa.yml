@@ -25,6 +25,11 @@ jobs:
           swiftc -parse-as-library Sources/Core/FootballResponseGuard.swift Tests/FootballResponseGuardTests.swift -o /tmp/ninetyplus-response-tests
           /tmp/ninetyplus-response-tests
 
+      - name: Test match center partial loading and live policy
+        run: |
+          swiftc -swift-version 5 -parse-as-library Sources/Core/PageResource.swift Sources/Core/MatchCenterProgress.swift Tests/MatchCenterProgressTests.swift -o /tmp/ninetyplus-match-tests
+          /tmp/ninetyplus-match-tests
+
       - name: Install XcodeGen
         run: brew install xcodegen
 

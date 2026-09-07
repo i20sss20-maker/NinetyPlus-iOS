@@ -20,7 +20,7 @@ struct APICompactMatchCard: View {
                 team(match.home, match.homeLogo)
                 Spacer()
                 VStack(spacing: 4) {
-                    if let home = match.homeScore, let away = match.awayScore {
+                    if !FixturePhase.isUpcoming(match.status), let home = match.homeScore, let away = match.awayScore {
                         Text("\(home) - \(away)")
                             .font(.title2.bold())
                     } else if let date = match.date {
@@ -44,22 +44,9 @@ struct APICompactMatchCard: View {
         .padding(.horizontal, 16)
     }
 
-    private var isLive: Bool { APISportsStore.shared.isLive(match.status) }
+    private var isLive: Bool { MatchLivePolicy.isLive(match.status) }
 
-    private var statusText: String {
-        let value = match.status.uppercased()
-        if isLive { return "مباشر" }
-        switch value {
-        case "FT": return "انتهت"
-        case "HT": return "بين الشوطين"
-        case "NS": return "لم تبدأ"
-        case "PST": return "مؤجلة"
-        case "CANC": return "ملغاة"
-        case "AET": return "وقت إضافي"
-        case "PEN": return "ركلات ترجيح"
-        default: return match.status.isEmpty ? "موعد" : match.status
-        }
-    }
+    private var statusText: String { MatchLivePolicy.statusText(match.status, elapsed: nil) }
 
     private func team(_ name: String, _ logo: String?) -> some View {
         VStack(spacing: 5) {

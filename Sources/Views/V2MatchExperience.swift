@@ -88,6 +88,7 @@ struct V2MatchesView: View {
             .task(id: "\(dayKey)|\(retryID)") { await load(force: retryID > 0) }
             .refreshable { await load(force: true) }
             .onDisappear { resource.invalidate() }
+            // Reuse the app's existing foreground refresh instead of a second timer.
             .onReceive(store.$lastUpdated) { updatedAt in
                 guard let updatedAt, Calendar.current.isDateInToday(selectedDate),
                       resource.key == dayKey, !resource.isLoading else { return }
@@ -119,108 +120,109 @@ struct V2MatchesView: View {
 
 @MainActor
 final class V2MatchCenterStore: ObservableObject {
-    @Published var current: APIPlusMatch?
-    @Published var events: [APIEventItem] = []
-    @Published var stats: [APIStatisticTeam] = []
-    @Published var lineups: [APILineupItem] = []
-    @Published var h2h: [APIPlusMatch] = []
-    @Published var loading = false
-    @Published var lastLiveUpdate: Date?
-    @Published var liveError: String?
-    @Published var sectionErrors: [String: String] = [:]
-
+    @Published private(set) var current: APIPlusMatch?
+    @Published private(set) var events: [APIEventItem] = []
+    @Published private(set) var stats: [APIStatisticTeam] = []
+    @Published private(set) var lineups: [APILineupItem] = []
+    @Published private(set) var h2h: [APIPlusMatch] = []
+    @Published private(set) var progress = MatchCenterProgress()
     private var lastObserved: APIPlusMatch?
 
-    private struct FetchResult<T> {
-        let value: T?
-        let error: String?
-    }
+    var lastLiveUpdate: Date? { progress.state(.fixture).lastUpdated }
 
-    private func capture<T>(_ work: () async throws -> T) async -> FetchResult<T> {
-        do { return FetchResult(value: try await work(), error: nil) }
-        catch { return FetchResult(value: nil, error: error.localizedDescription) }
-    }
-
-    func load(_ match: APIPlusMatch) async {
-        loading = true
-        liveError = nil
-        sectionErrors = [:]
+    private func prepare(_ match: APIPlusMatch) {
+        guard progress.select(matchID: match.id) else { return }
         current = match
-        lastObserved = match
-        defer { loading = false }
-
-        async let fixture: FetchResult<APIEnvelope<[APIFixture]>> = capture {
-            try await APIFootballClient.get("fixtures", query: [.init(name: "id", value: match.id)])
-        }
-        async let e: FetchResult<APIEnvelope<[APIEventItem]>> = capture {
-            try await APIFootballClient.get("fixtures/events", query: [.init(name: "fixture", value: match.id)])
-        }
-        async let s: FetchResult<APIEnvelope<[APIStatisticTeam]>> = capture {
-            try await APIFootballClient.get("fixtures/statistics", query: [.init(name: "fixture", value: match.id)])
-        }
-        async let l: FetchResult<APIEnvelope<[APILineupItem]>> = capture {
-            try await APIFootballClient.get("fixtures/lineups", query: [.init(name: "fixture", value: match.id)])
-        }
-        async let h: FetchResult<APIEnvelope<[APIFixture]>>? = {
-            guard let home = match.homeID, let away = match.awayID else { return nil }
-            return await capture {
-                try await APIFootballClient.get("fixtures/headtohead", query: [.init(name: "h2h", value: "\(home)-\(away)"), .init(name: "last", value: "5")])
-            }
-        }()
-
-        let result = await (fixture, e, s, l, h)
-        if let item = result.0.value?.response.first { current = map(item) }
-        if let message = result.0.error { sectionErrors["fixture"] = message }
-
-        if let value = result.1.value { events = value.response }
-        if let message = result.1.error { sectionErrors["events"] = message }
-
-        if let value = result.2.value { stats = value.response }
-        if let message = result.2.error { sectionErrors["stats"] = message }
-
-        if let value = result.3.value { lineups = value.response }
-        if let message = result.3.error { sectionErrors["lineups"] = message }
-
-        if let hResult = result.4 {
-            if let value = hResult.value { h2h = value.response.map(map) }
-            if let message = hResult.error { sectionErrors["h2h"] = message }
-        }
-
-        let failed = sectionErrors.count
-        if failed > 0 {
-            liveError = failed == 1 ? "تعذر تحميل جزء واحد من بيانات المباراة." : "تعذر تحميل \(failed) أجزاء من بيانات المباراة. البيانات الأخرى ما زالت معروضة."
-        }
-        lastObserved = current
-        lastLiveUpdate = Date()
+        events = []; stats = []; lineups = []; h2h = []
+        lastObserved = nil
     }
 
-    func refreshLive(_ fallback: APIPlusMatch) async {
+    func cancelPending() { progress.invalidate() }
+
+    func load(_ match: APIPlusMatch, force: Bool = false) async {
+        guard !Task.isCancelled else { return }
+        prepare(match)
+        let lackedTeamIDs = current?.homeID == nil || current?.awayID == nil
+        await fetchSections(MatchDataSection.allCases, match: match, force: force)
+        // The fixture response may supply team IDs absent from the entry card.
+        if lackedTeamIDs, !Task.isCancelled, progress.matchID == match.id,
+           progress.state(.h2h).value == nil, current?.homeID != nil, current?.awayID != nil {
+            await loadSection(.h2h, match: match)
+        }
+    }
+
+    func refreshLive(_ match: APIPlusMatch, sections: [MatchDataSection]) async {
+        guard !Task.isCancelled else { return }
+        await fetchSections(Array(Set([.fixture] + sections)), match: match, force: false)
+    }
+
+    private func fetchSections(_ sections: [MatchDataSection], match: APIPlusMatch, force: Bool) async {
+        await withTaskGroup(of: Void.self) { group in
+            for section in sections {
+                group.addTask { await self.loadSection(section, match: match, force: force) }
+            }
+        }
+    }
+
+    func loadSection(_ section: MatchDataSection, match: APIPlusMatch, force: Bool = false) async {
+        guard !Task.isCancelled else { return }
+        prepare(match)
+        let displayed = current ?? match
+        if section == .h2h {
+            guard displayed.homeID != nil, displayed.awayID != nil else {
+                progress.markUnavailable(.h2h)
+                return
+            }
+            progress.markAvailable(.h2h)
+        }
+        guard let token = progress.begin(section, force: force) else { return }
+        defer { progress.cancel(section, token: token) }
         do {
-            async let fixture: APIEnvelope<[APIFixture]> = APIFootballClient.get("fixtures", query: [.init(name: "id", value: fallback.id)])
-            async let e: APIEnvelope<[APIEventItem]> = APIFootballClient.get("fixtures/events", query: [.init(name: "fixture", value: fallback.id)])
-            async let s: APIEnvelope<[APIStatisticTeam]> = APIFootballClient.get("fixtures/statistics", query: [.init(name: "fixture", value: fallback.id)])
-            let result = try await (fixture, e, s)
-            if let item = result.0.response.first {
+            switch section {
+            case .fixture:
+                let result: APIEnvelope<[APIFixture]> = try await APIFootballClient.get("fixtures", query: [.init(name: "id", value: match.id)])
+                try Task.checkCancellation()
+                guard progress.matchID == match.id else { return }
+                guard let item = result.response.first(where: { String($0.fixture.id) == match.id }) else {
+                    throw APIFootballError.badResponse
+                }
                 let updated = map(item)
-                notifyIfNeeded(previous: lastObserved, updated: updated)
+                let previous = lastObserved
+                let previousTime = lastLiveUpdate
+                guard progress.succeed(.fixture, token: token, hasContent: true) else { return }
                 current = updated
                 lastObserved = updated
+                // Initial loads and long gaps do not generate catch-up goal alerts.
+                if let previousTime, Date().timeIntervalSince(previousTime) < 120 {
+                    notifyIfNeeded(previous: previous, updated: updated)
+                }
+            case .events:
+                let result: APIEnvelope<[APIEventItem]> = try await APIFootballClient.get("fixtures/events", query: [.init(name: "fixture", value: match.id)])
+                try Task.checkCancellation()
+                guard progress.matchID == match.id, progress.succeed(.events, token: token, hasContent: !result.response.isEmpty) else { return }
+                events = result.response
+            case .stats:
+                let result: APIEnvelope<[APIStatisticTeam]> = try await APIFootballClient.get("fixtures/statistics", query: [.init(name: "fixture", value: match.id)])
+                try Task.checkCancellation()
+                guard progress.matchID == match.id, progress.succeed(.stats, token: token, hasContent: !result.response.isEmpty) else { return }
+                stats = result.response
+            case .lineups:
+                let result: APIEnvelope<[APILineupItem]> = try await APIFootballClient.get("fixtures/lineups", query: [.init(name: "fixture", value: match.id)])
+                try Task.checkCancellation()
+                guard progress.matchID == match.id, progress.succeed(.lineups, token: token, hasContent: !result.response.isEmpty) else { return }
+                lineups = result.response
+            case .h2h:
+                guard let home = displayed.homeID, let away = displayed.awayID else { return }
+                let result: APIEnvelope<[APIFixture]> = try await APIFootballClient.get("fixtures/headtohead", query: [.init(name: "h2h", value: "\(home)-\(away)"), .init(name: "last", value: "5")])
+                try Task.checkCancellation()
+                guard progress.matchID == match.id, progress.succeed(.h2h, token: token, hasContent: !result.response.isEmpty) else { return }
+                h2h = result.response.map(map)
             }
-            events = result.1.response
-            stats = result.2.response
-            sectionErrors["fixture"] = nil
-            sectionErrors["events"] = nil
-            sectionErrors["stats"] = nil
-            lastLiveUpdate = Date()
-            liveError = nil
         } catch {
-            liveError = "تعذر التحديث اللحظي مؤقتًا. آخر بيانات صحيحة ما زالت معروضة."
+            guard !Task.isCancelled, !(error is CancellationError),
+                  (error as? URLError)?.code != .cancelled, progress.matchID == match.id else { return }
+            progress.fail(section, token: token, message: error.localizedDescription)
         }
-    }
-
-    func shouldAutoRefresh(_ match: APIPlusMatch) -> Bool {
-        let status = match.status.uppercased()
-        return APISportsStore.shared.isLive(status) || ["NS", "TBD"].contains(status)
     }
 
     private func map(_ item: APIFixture) -> APIPlusMatch {
@@ -235,67 +237,93 @@ final class V2MatchCenterStore: ObservableObject {
     }
 
     private func notifyIfNeeded(previous: APIPlusMatch?, updated: APIPlusMatch) {
-        guard let previous,
+        guard let previous, previous.id == updated.id,
               UserDefaults.standard.bool(forKey: "notificationsEnabled"),
-              followedIDs.contains(updated.id) else { return }
-
-        if previous.homeScore != updated.homeScore || previous.awayScore != updated.awayScore {
-            guard updated.homeScore != nil, updated.awayScore != nil else { return }
-            sendNotification(title: "تغيرت النتيجة", body: "\(updated.home) \(updated.homeScore ?? 0) - \(updated.awayScore ?? 0) \(updated.away)", id: updated.id)
-            return
+              SavedFavoriteIDs.parse(UserDefaults.standard.string(forKey: "followedMatchIDs") ?? "").contains(updated.id),
+              let notice = MatchLivePolicy.notice(previousStatus: previous.status, status: updated.status, previousHome: previous.homeScore, previousAway: previous.awayScore, home: updated.homeScore, away: updated.awayScore) else { return }
+        let title: String
+        switch notice {
+        case .started: title = "بدأت المباراة"
+        case .scoreChanged: title = "تغيرت النتيجة"
+        case .finished: title = "انتهت المباراة"
         }
-        if previous.status.uppercased() != updated.status.uppercased() {
-            if APISportsStore.shared.isLive(updated.status) {
-                sendNotification(title: "بدأت المباراة", body: "\(updated.home) ضد \(updated.away)", id: updated.id)
-            } else if ["FT", "AET", "PEN"].contains(updated.status.uppercased()) {
-                sendNotification(title: "انتهت المباراة", body: "\(updated.home) \(updated.homeScore ?? 0) - \(updated.awayScore ?? 0) \(updated.away)", id: updated.id)
-            }
+        var body = "\(updated.home) ضد \(updated.away)"
+        if let home = updated.homeScore, let away = updated.awayScore {
+            body = "\(updated.home) \(home) - \(away) \(updated.away)"
         }
-    }
-
-    private var followedIDs: Set<String> {
-        Set((UserDefaults.standard.string(forKey: "followedMatchIDs") ?? "").split(separator: ",").map(String.init))
-    }
-
-    private func sendNotification(title: String, body: String, id: String) {
-        let content = UNMutableNotificationContent(); content.title = title; content.body = body; content.sound = .default; content.userInfo = ["matchID": id]
-        let request = UNNotificationRequest(identifier: "ninetyplus.v2.\(id).\(Date().timeIntervalSince1970)", content: content, trigger: nil)
+        let content = UNMutableNotificationContent()
+        content.title = title; content.body = body; content.sound = .default
+        content.userInfo = ["matchID": updated.id]
+        let request = UNNotificationRequest(identifier: "ninetyplus.v2.\(updated.id).\(UUID().uuidString)", content: content, trigger: nil)
         UNUserNotificationCenter.current().add(request)
     }
 }
 
 struct V2MatchCenterView: View {
     let match: APIPlusMatch
+    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var store = V2MatchCenterStore()
     @State private var tab = "نظرة عامة"
+    @State private var visible = false
+    @State private var retryID = 0
+    @State private var retrySection: MatchDataSection?
+    @State private var followBusy = false
+    @State private var permissionNotice: String?
     @AppStorage("followedMatchIDs") private var followedMatchIDs = ""
     @AppStorage("notificationsEnabled") private var notificationsEnabled = false
 
     private var displayMatch: APIPlusMatch { store.current ?? match }
-    private var isFollowed: Bool { Set(followedMatchIDs.split(separator: ",").map(String.init)).contains(match.id) }
+    private var isFollowed: Bool { SavedFavoriteIDs.parse(followedMatchIDs).contains(match.id) }
+    private var isActive: Bool { visible && scenePhase == .active }
+    private var lifecycleKey: String { "\(match.id):\(isActive)" }
+    private var tabSections: [MatchDataSection] {
+        switch tab {
+        case "الأحداث": return [.events]
+        case "الإحصائيات": return [.stats]
+        case "التشكيلة": return [.lineups]
+        case "المواجهات": return [.h2h]
+        case "تحليل 90+": return [.events, .stats]
+        default: return []
+        }
+    }
 
     var body: some View {
         ScrollView {
             VStack(spacing: 16) {
                 header
                 followBar
+                feedback(.fixture)
                 SegmentBar(items: ["نظرة عامة", "تحليل 90+", "الأحداث", "الإحصائيات", "التشكيلة", "المواجهات"], selected: $tab)
-                if store.loading { ProgressView().tint(AppTheme.green).padding(40) } else { content }
+                content
             }.padding(.vertical, 12)
         }
         .background(AppTheme.bg.ignoresSafeArea())
         .navigationTitle("مركز المباراة").navigationBarTitleDisplayMode(.inline)
-        .task(id: match.id) {
+        .onAppear { visible = true }
+        .onDisappear { visible = false; store.cancelPending() }
+        .task(id: lifecycleKey) {
+            guard isActive else { store.cancelPending(); return }
             await store.load(match)
-            while !Task.isCancelled {
-                let active = store.current ?? match
-                guard store.shouldAutoRefresh(active) else { break }
-                try? await Task.sleep(for: .seconds(30))
-                guard !Task.isCancelled else { break }
-                await store.refreshLive(match)
+            while !Task.isCancelled && isActive {
+                let current = displayMatch
+                guard let seconds = MatchLivePolicy.interval(status: current.status, kickoff: current.date) else { break }
+                do { try await Task.sleep(for: .seconds(seconds)) } catch { return }
+                guard !Task.isCancelled && isActive else { return }
+                await store.refreshLive(match, sections: tabSections)
             }
         }
-        .refreshable { await store.load(match) }
+        .task(id: "\(lifecycleKey):\(tab)") {
+            guard isActive else { return }
+            for section in tabSections { await store.loadSection(section, match: match) }
+        }
+        .task(id: "\(lifecycleKey):retry:\(retryID)") {
+            guard isActive, retryID > 0, let retrySection else { return }
+            await store.loadSection(retrySection, match: match, force: true)
+        }
+        .refreshable {
+            guard isActive else { return }
+            await store.load(match, force: true)
+        }
     }
 
     private var header: some View {
@@ -304,14 +332,15 @@ struct V2MatchCenterView: View {
             HStack {
                 Text(m.league).font(.caption).foregroundStyle(AppTheme.muted)
                 Spacer()
-                Text(statusText(m)).font(.caption.bold()).foregroundStyle(AppTheme.green)
+                Text(MatchLivePolicy.statusText(m.status, elapsed: m.elapsed)).font(.caption.bold()).foregroundStyle(AppTheme.green)
             }
             HStack {
                 team(m.home, m.homeLogo); Spacer()
                 VStack(spacing: 5) {
-                    if let h = m.homeScore, let a = m.awayScore { Text("\(h) - \(a)").font(.system(size: 34, weight: .black, design: .rounded)) }
-                    else if let date = m.date { Text(date, style: .time).font(.title2.bold()) }
-                    if let elapsed = m.elapsed { Text("\(elapsed)′").font(.caption).foregroundStyle(AppTheme.green) }
+                    if !FixturePhase.isUpcoming(m.status), let h = m.homeScore, let a = m.awayScore {
+                        Text("\(h) - \(a)").font(.system(size: 34, weight: .black, design: .rounded)).monospacedDigit()
+                    } else if let date = m.date { Text(date, style: .time).font(.title2.bold()) }
+                    else { Text("—").font(.title2.bold()) }
                 }
                 Spacer(); team(m.away, m.awayLogo)
             }
@@ -322,25 +351,45 @@ struct V2MatchCenterView: View {
     }
 
     private var followBar: some View {
-        HStack(spacing: 10) {
-            Button { Task { await toggleFollow() } } label: {
-                Label(isFollowed ? "تتم متابعة المباراة" : "متابعة المباراة", systemImage: isFollowed ? "bell.fill" : "bell")
-                    .font(.subheadline.bold()).foregroundStyle(isFollowed ? .black : .white)
-                    .padding(.horizontal, 14).padding(.vertical, 9)
-                    .background(isFollowed ? AppTheme.green : AppTheme.card, in: Capsule())
-            }.buttonStyle(.plain)
-            Spacer()
-            if let date = store.lastLiveUpdate { Text("تحديث \(date, style: .relative)").font(.caption2).foregroundStyle(AppTheme.muted) }
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                Button { Task { await toggleFollow() } } label: {
+                    Label(isFollowed ? "تتم متابعة المباراة" : "متابعة المباراة", systemImage: isFollowed ? "bell.fill" : "bell")
+                        .font(.subheadline.bold()).foregroundStyle(isFollowed ? .black : .white)
+                        .padding(.horizontal, 14).padding(.vertical, 9)
+                        .background(isFollowed ? AppTheme.green : AppTheme.card, in: Capsule())
+                }.buttonStyle(.plain).disabled(followBusy)
+                Spacer()
+                if let date = store.lastLiveUpdate {
+                    Text("آخر استلام للنتيجة \(date, style: .relative)").font(.caption2).foregroundStyle(AppTheme.muted)
+                }
+            }
+            if let permissionNotice { Text(permissionNotice).font(.caption).foregroundStyle(AppTheme.muted) }
         }.padding(.horizontal, 16)
+    }
+
+    private func feedback(_ section: MatchDataSection) -> some View {
+        let state = store.progress.state(section)
+        return PageLoadFeedback(
+            loading: state.isLoading,
+            hasValue: state.value != nil,
+            message: state.errorMessage.map { "\(section.title): \($0)" },
+            updatedAt: state.lastUpdated
+        ) { retrySection = section; retryID += 1 }
     }
 
     @ViewBuilder private var content: some View {
         switch tab {
-        case "تحليل 90+": insightView
-        case "الأحداث": eventsView
-        case "الإحصائيات": statsView
-        case "التشكيلة": lineupsView
-        case "المواجهات": h2hView
+        case "تحليل 90+":
+            feedback(.events); feedback(.stats); insightView
+        case "الأحداث":
+            feedback(.events); eventsView
+        case "الإحصائيات":
+            feedback(.stats); statsView
+        case "التشكيلة":
+            feedback(.lineups); lineupsView
+        case "المواجهات":
+            feedback(.h2h); h2hView
         default: overview
         }
     }
@@ -348,86 +397,117 @@ struct V2MatchCenterView: View {
     private var overview: some View {
         let m = displayMatch
         return VStack(spacing: 12) {
-            infoRow("الحالة", statusText(m)); infoRow("البطولة", m.league)
+            infoRow("الحالة", MatchLivePolicy.statusText(m.status, elapsed: m.elapsed))
+            infoRow("البطولة", m.league)
             if let date = m.date { infoRow("الموعد", date.formatted(date: .abbreviated, time: .shortened)) }
-            infoRow("الأحداث المتاحة", "\(store.events.count)"); infoRow("التشكيلات", "\(store.lineups.count)"); infoRow("مواجهات سابقة", "\(store.h2h.count)")
-            if let error = store.liveError {
-                VStack(spacing: 8) {
-                    Label(error, systemImage: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(.orange)
-                    Button { Task { await store.load(match) } } label: {
-                        Label("إعادة تحميل بيانات المباراة", systemImage: "arrow.clockwise")
-                            .font(.caption.bold()).foregroundStyle(AppTheme.green)
-                    }
-                }.frame(maxWidth: .infinity)
+            infoRow("الأحداث المتاحة", countText(.events, store.events.count))
+            infoRow("التشكيلات", countText(.lineups, store.lineups.count))
+            infoRow("مواجهات سابقة", countText(.h2h, store.h2h.count))
+            ForEach(store.progress.errors, id: \.0) { section, _ in
+                Button {
+                    retrySection = section; retryID += 1
+                } label: {
+                    Label("إعادة تحميل \(section.title)", systemImage: "arrow.clockwise")
+                        .font(.caption.bold()).foregroundStyle(.orange)
+                }.disabled(store.progress.state(section).isLoading)
             }
         }.padding(16).background(AppTheme.card, in: RoundedRectangle(cornerRadius: 18)).padding(.horizontal, 16)
     }
 
+    private func countText(_ section: MatchDataSection, _ count: Int) -> String {
+        let state = store.progress.state(section)
+        if state.value != nil { return state.errorMessage == nil ? "\(count)" : "\(count) • آخر بيانات محفوظة" }
+        return state.isLoading ? "جارٍ التحميل" : "غير متاح"
+    }
+
     private var insightView: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Label("تحليل مبني على البيانات المتاحة فقط", systemImage: "sparkles").font(.headline).foregroundStyle(AppTheme.green)
-            Text(factualSummary).font(.body).foregroundStyle(.white).frame(maxWidth: .infinity, alignment: .leading)
-            if !keyFacts.isEmpty {
-                VStack(spacing: 10) { ForEach(keyFacts, id: \.self) { fact in HStack(alignment: .top, spacing: 10) { Image(systemName: "checkmark.circle.fill").foregroundStyle(AppTheme.green); Text(fact).font(.subheadline); Spacer(minLength: 0) } } }
-            }
-            if !store.sectionErrors.isEmpty {
-                Label("بعض مصادر بيانات هذه المباراة لم تستجب، لذلك التحليل يستخدم الأجزاء التي وصلت فقط.", systemImage: "info.circle")
+            Label("ملخص البيانات المتاحة", systemImage: "sparkles").font(.headline).foregroundStyle(AppTheme.green)
+            if !store.progress.errors.isEmpty {
+                Label("بعض الأقسام لم تتحدث. الملخص يستخدم آخر بيانات وصلت، وقد لا يعكس آخر تطورات المباراة.", systemImage: "info.circle")
                     .font(.caption).foregroundStyle(.orange)
             }
-            Text("90+ لا يخمّن أرقامًا غير موجودة في المصدر. إذا لم تتوفر الإحصائيات، يظهر ذلك بوضوح.").font(.caption).foregroundStyle(AppTheme.muted)
+            Text(MatchLivePolicy.summary(status: displayMatch.status, homeName: displayMatch.home, awayName: displayMatch.away, home: displayMatch.homeScore, away: displayMatch.awayScore))
+                .font(.body).foregroundStyle(.white).frame(maxWidth: .infinity, alignment: .leading)
+            ForEach(keyFacts, id: \.self) { fact in
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: "checkmark.circle.fill").foregroundStyle(AppTheme.green)
+                    Text(fact).font(.subheadline)
+                    Spacer(minLength: 0)
+                }
+            }
+            Text("هذا ملخص آلي للبيانات المنشورة، وليس توقعًا للنتيجة. لا تُستبدل المعلومات الناقصة بأرقام تقديرية.")
+                .font(.caption).foregroundStyle(AppTheme.muted)
         }.padding(16).background(AppTheme.card, in: RoundedRectangle(cornerRadius: 18)).padding(.horizontal, 16)
     }
 
     private var eventsView: some View {
         VStack(spacing: 0) {
-            if store.events.isEmpty { sectionUnavailable("لا توجد أحداث منشورة", key: "events") }
-            else { ForEach(Array(store.events.enumerated()), id: \.offset) { _, event in
-                HStack { Text("\(event.time.elapsed ?? 0)′").foregroundStyle(AppTheme.green).frame(width: 42); VStack(alignment: .leading) { Text(event.player.name ?? event.team.name ?? "حدث").bold(); Text(event.detail ?? event.type ?? "").font(.caption).foregroundStyle(AppTheme.muted) }; Spacer() }.padding(12); Divider().overlay(Color.white.opacity(0.08))
-            } }
+            if store.events.isEmpty && store.progress.mayShowEmpty(.events) { unavailable("لا توجد أحداث منشورة") }
+            ForEach(Array(store.events.enumerated()), id: \.offset) { _, event in
+                HStack {
+                    Text(MatchLivePolicy.eventMinute(elapsed: event.time.elapsed, extra: event.time.extra))
+                        .foregroundStyle(AppTheme.green).frame(width: 60)
+                    VStack(alignment: .leading) {
+                        Text(event.player.name ?? event.team.name ?? "حدث").bold()
+                        Text(event.detail ?? event.type ?? "").font(.caption).foregroundStyle(AppTheme.muted)
+                    }
+                    Spacer()
+                }.padding(12)
+                Divider().overlay(Color.white.opacity(0.08))
+            }
         }.background(AppTheme.card, in: RoundedRectangle(cornerRadius: 18)).padding(.horizontal, 16)
     }
 
     private var statsView: some View {
         VStack(spacing: 12) {
-            if store.stats.isEmpty { sectionUnavailable("الإحصائيات غير متاحة من المصدر", key: "stats") }
-            else { ForEach(Array(store.stats.enumerated()), id: \.offset) { _, teamStats in
+            if store.stats.isEmpty && store.progress.mayShowEmpty(.stats) { unavailable("الإحصائيات غير متاحة من المصدر") }
+            ForEach(Array(store.stats.enumerated()), id: \.offset) { _, teamStats in
                 VStack(alignment: .leading, spacing: 8) {
                     Text(teamStats.team.name ?? "فريق").font(.headline).foregroundStyle(AppTheme.green)
-                    ForEach(Array(teamStats.statistics.enumerated()), id: \.offset) { _, stat in HStack { Text(stat.type ?? ""); Spacer(); Text(stat.value?.text ?? "0").bold() }.font(.subheadline) }
+                    ForEach(Array(teamStats.statistics.enumerated()), id: \.offset) { _, stat in
+                        HStack { Text(stat.type ?? "—"); Spacer(); Text(statText(stat.value)).bold() }.font(.subheadline)
+                    }
                 }.padding(14).background(AppTheme.card, in: RoundedRectangle(cornerRadius: 18))
-            } }
+            }
         }.padding(.horizontal, 16)
+    }
+
+    private func statText(_ value: APIStatValue?) -> String {
+        guard let value else { return "—" }
+        if case .null = value { return "—" }
+        return value.text.isEmpty ? "—" : value.text
     }
 
     private var lineupsView: some View {
         VStack(spacing: 12) {
-            if store.lineups.isEmpty { sectionUnavailable("التشكيلة غير منشورة حاليًا", key: "lineups") }
-            else { ForEach(Array(store.lineups.enumerated()), id: \.offset) { _, lineup in
+            if store.lineups.isEmpty && store.progress.mayShowEmpty(.lineups) { unavailable("التشكيلة غير منشورة حاليًا") }
+            ForEach(Array(store.lineups.enumerated()), id: \.offset) { _, lineup in
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("\(lineup.team.name ?? "فريق") • \(lineup.formation ?? "")").font(.headline).foregroundStyle(AppTheme.green)
-                    ForEach(Array((lineup.startXI ?? []).enumerated()), id: \.offset) { _, slot in HStack { Text(slot.player.number.map(String.init) ?? "-").frame(width: 28); Text(slot.player.name ?? "لاعب"); Spacer(); Text(slot.player.pos ?? "").foregroundStyle(AppTheme.muted) }.font(.subheadline) }
+                    Text("\(lineup.team.name ?? "فريق") • \(lineup.formation ?? "—")").font(.headline).foregroundStyle(AppTheme.green)
+                    ForEach(Array((lineup.startXI ?? []).enumerated()), id: \.offset) { _, slot in
+                        HStack {
+                            Text(slot.player.number.map(String.init) ?? "—").frame(width: 28)
+                            Text(slot.player.name ?? "لاعب"); Spacer()
+                            Text(slot.player.pos ?? "").foregroundStyle(AppTheme.muted)
+                        }.font(.subheadline)
+                    }
                 }.padding(14).background(AppTheme.card, in: RoundedRectangle(cornerRadius: 18))
-            } }
+            }
         }.padding(.horizontal, 16)
     }
 
     private var h2hView: some View {
-        VStack(spacing: 10) { if store.h2h.isEmpty { sectionUnavailable("لا توجد مواجهات سابقة منشورة", key: "h2h") } else { ForEach(store.h2h) { APICompactMatchCard(match: $0) } } }
-    }
-
-    private var factualSummary: String {
-        let m = displayMatch
-        if let home = m.homeScore, let away = m.awayScore {
-            if home > away { return "\(m.home) متقدم على \(m.away) بنتيجة \(home)-\(away). التحليل أدناه يعتمد على أحداث وإحصائيات المباراة المنشورة من المصدر." }
-            if away > home { return "\(m.away) متقدم على \(m.home) بنتيجة \(away)-\(home). التحليل أدناه يعتمد على أحداث وإحصائيات المباراة المنشورة من المصدر." }
-            return "المباراة متعادلة \(home)-\(away). التحليل أدناه يعتمد على أحداث وإحصائيات المباراة المنشورة من المصدر."
+        VStack(spacing: 10) {
+            if store.h2h.isEmpty && store.progress.mayShowEmpty(.h2h) { unavailable("لا توجد مواجهات سابقة متاحة من المصدر") }
+            ForEach(store.h2h) { APICompactMatchCard(match: $0) }
         }
-        return "المباراة لم تبدأ أو لا توجد نتيجة منشورة بعد. نعرض فقط المعلومات التي وصلت فعليًا من مصدر البيانات."
     }
 
     private var keyFacts: [String] {
         var facts: [String] = []
-        let goals = store.events.filter { ($0.type ?? "").lowercased().contains("goal") }, cards = store.events.filter { ($0.type ?? "").lowercased().contains("card") }
+        let goals = store.events.filter { ($0.type ?? "").lowercased().contains("goal") }
+        let cards = store.events.filter { ($0.type ?? "").lowercased().contains("card") }
         if !goals.isEmpty { facts.append("عدد أحداث الأهداف المنشورة: \(goals.count).") }
         if !cards.isEmpty { facts.append("عدد أحداث البطاقات المنشورة: \(cards.count).") }
         if store.lineups.count == 2 { facts.append("تشكيلة الفريقين متوفرة من المصدر.") }
@@ -436,39 +516,28 @@ struct V2MatchCenterView: View {
         return facts
     }
 
-    private func toggleFollow() async {
-        var ids = Set(followedMatchIDs.split(separator: ",").map(String.init))
-        if ids.contains(match.id) { ids.remove(match.id) }
-        else {
-            ids.insert(match.id)
-            let granted = (try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge])) ?? false
+    @MainActor private func toggleFollow() async {
+        guard !followBusy else { return }
+        followBusy = true
+        defer { followBusy = false }
+        permissionNotice = nil
+        if isFollowed {
+            var ids = Set(SavedFavoriteIDs.parse(followedMatchIDs))
+            ids.remove(match.id)
+            followedMatchIDs = ids.sorted().joined(separator: ",")
+            return
+        }
+        do {
+            let granted = try await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge])
             if granted { notificationsEnabled = true }
-        }
+            else { permissionNotice = "المتابعة محفوظة، لكن إذن التنبيهات غير مفعّل في إعدادات الجهاز." }
+        } catch { permissionNotice = "المتابعة محفوظة. تعذر طلب إذن التنبيهات حاليًا." }
+        var ids = Set(SavedFavoriteIDs.parse(followedMatchIDs))
+        ids.insert(match.id)
         followedMatchIDs = ids.sorted().joined(separator: ",")
-    }
-
-    @ViewBuilder private func sectionUnavailable(_ fallback: String, key: String) -> some View {
-        if let message = store.sectionErrors[key] {
-            VStack(spacing: 10) {
-                Image(systemName: "wifi.exclamationmark").font(.title2).foregroundStyle(.orange)
-                Text("تعذر تحميل هذا القسم").font(.headline)
-                Text(message).font(.caption).foregroundStyle(AppTheme.muted).multilineTextAlignment(.center)
-                Button { Task { await store.load(match) } } label: {
-                    Label("إعادة المحاولة", systemImage: "arrow.clockwise").font(.caption.bold()).foregroundStyle(AppTheme.green)
-                }
-            }.frame(maxWidth: .infinity).padding(24)
-        } else {
-            unavailable(fallback)
-        }
     }
 
     private func team(_ name: String, _ logo: String?) -> some View { VStack(spacing: 7) { RemoteBadge(url: logo).frame(width: 68, height: 68); Text(name).font(.subheadline.bold()).multilineTextAlignment(.center).lineLimit(2).frame(width: 105) } }
     private func infoRow(_ title: String, _ value: String) -> some View { HStack { Text(title).foregroundStyle(AppTheme.muted); Spacer(); Text(value).bold() } }
     private func unavailable(_ text: String) -> some View { Text(text).foregroundStyle(AppTheme.muted).frame(maxWidth: .infinity).padding(30) }
-
-    private func statusText(_ m: APIPlusMatch) -> String {
-        let status = m.status.uppercased()
-        if APISportsStore.shared.isLive(status) { return m.elapsed.map { "مباشر • \($0)′" } ?? "مباشر" }
-        switch status { case "FT": return "انتهت"; case "HT": return "بين الشوطين"; case "NS": return "لم تبدأ"; case "PST": return "مؤجلة"; case "CANC": return "ملغاة"; case "AET": return "وقت إضافي"; case "PEN": return "ركلات ترجيح"; default: return m.status.isEmpty ? "موعد" : m.status }
-    }
 }
