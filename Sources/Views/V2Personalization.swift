@@ -129,6 +129,10 @@ struct V2LeaguesListView: View {
 }
 
 struct V2MoreView: View {
+    @State private var health: NinetyPlusBackendHealth?
+    @State private var healthLoading = true
+    @State private var healthError = false
+
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -143,27 +147,68 @@ struct V2MoreView: View {
                 .padding(.bottom, 30)
             }
             .background(AppTheme.bg.ignoresSafeArea())
+            .task { await refreshHealth() }
+            .refreshable { await refreshHealth() }
         }
     }
 
+    private var isHealthy: Bool { health?.ok == true && health?.providerConfigured != false && !healthError }
+
     private var statusCard: some View {
-        HStack(spacing: 14) {
-            Image(systemName: APIFootballClient.isConfigured ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
-                .font(.title2)
-                .foregroundStyle(APIFootballClient.isConfigured ? AppTheme.green : .orange)
-                .frame(width: 48, height: 48)
-                .background((APIFootballClient.isConfigured ? AppTheme.green : Color.orange).opacity(0.12), in: RoundedRectangle(cornerRadius: 14))
-            VStack(alignment: .leading, spacing: 4) {
-                Text("حالة الخدمة").font(.headline).foregroundStyle(.white)
-                Text(APIFootballClient.isConfigured ? "متصل بمصدر البيانات" : "الخدمة الرياضية غير متاحة حاليًا")
-                    .font(.caption)
-                    .foregroundStyle(AppTheme.muted)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 14) {
+                if healthLoading {
+                    ProgressView().tint(AppTheme.green).frame(width: 48, height: 48)
+                } else {
+                    Image(systemName: isHealthy ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
+                        .font(.title2)
+                        .foregroundStyle(isHealthy ? AppTheme.green : .orange)
+                        .frame(width: 48, height: 48)
+                        .background((isHealthy ? AppTheme.green : Color.orange).opacity(0.12), in: RoundedRectangle(cornerRadius: 14))
+                }
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("حالة خدمة 90+").font(.headline).foregroundStyle(.white)
+                    Text(healthLoading ? "جاري فحص Railway..." : (isHealthy ? "متصل والخدمة تعمل فعليًا" : "تعذر الوصول للخدمة حاليًا"))
+                        .font(.caption)
+                        .foregroundStyle(AppTheme.muted)
+                }
+                Spacer()
             }
-            Spacer()
+
+            if let health, isHealthy {
+                Divider().overlay(Color.white.opacity(0.08))
+                HStack {
+                    healthMetric("إصدار", health.version ?? "—")
+                    healthMetric("الكاش", "\(health.cacheEntries ?? 0)")
+                    if let used = health.providerRequestsToday, let budget = health.providerDailyBudget {
+                        healthMetric("استهلاك اليوم", "\(used)/\(budget)")
+                    }
+                }
+            }
         }
         .padding(14)
         .background(AppTheme.card, in: RoundedRectangle(cornerRadius: 18))
         .padding(.horizontal, 16)
+    }
+
+    private func healthMetric(_ title: String, _ value: String) -> some View {
+        VStack(spacing: 3) {
+            Text(value).font(.subheadline.bold()).foregroundStyle(.white)
+            Text(title).font(.caption2).foregroundStyle(AppTheme.muted)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    @MainActor private func refreshHealth() async {
+        healthLoading = true
+        defer { healthLoading = false }
+        do {
+            health = try await APIFootballClient.health()
+            healthError = false
+        } catch {
+            health = nil
+            healthError = true
+        }
     }
 
     private func card(_ title: String, _ subtitle: String, _ icon: String) -> some View {
