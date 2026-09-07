@@ -1,4 +1,4 @@
-// v0.8.5 — complete lineup metadata without spending API-Football quota.
+// v0.8.6 — complete lineup metadata without spending API-Football quota.
 replaceOnce(
   "function normalizeESPNDetail(value) {",
   `function normalizeESPNCoach(value) {
@@ -96,7 +96,7 @@ async function espnTeamCoach(leagueCode,teamId) {
   if (!leagueCode || !teamId) return null;
   const cacheKey=\`espn:coach:v2:\${leagueCode}:\${teamId}\`;
   const cached=getCached(cacheKey); if (cached) { try { return JSON.parse(cached.body); } catch {} }
-  const headers={accept:'application/json','user-agent':'NinetyPlus-Backend/0.8.5'};
+  const headers={accept:'application/json','user-agent':'NinetyPlus-Backend/0.8.6'};
   const year=new Date().getUTCFullYear();
   const core='https://sports.core.api.espn.com/v2/sports/soccer/leagues';
   const urls=[
@@ -114,27 +114,62 @@ async function espnTeamCoach(leagueCode,teamId) {
   }
   return null;
 }
+function splSlugForTeam(name) {
+  const key=String(name||'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
+  const exact={
+    'al ahli':'al-ahli','al ettifaq':'al-ettifaq','al faisaly':'al-faisaly','al fateh':'al-fateh','al fayha':'al-fayha',
+    'al hazem':'al-hazem','al hilal':'al-hilal','al ittihad':'al-ittihad','al khaleej':'al-khaleej','al kholood':'al-kholood',
+    'al nassr':'al-nassr','al qadsiah':'al-qadsiah','al riyadh':'al-riyadh','al shabab':'al-shabab','al taawoun':'al-taawoun',
+    'abha':'abha','diriyah club':'diriyah-club','neom sc':'neom','neom':'neom'
+  };
+  return exact[key] || key.replace(/\s+/g,'-');
+}
+function htmlText(value) {
+  return String(value||'').replace(/<script[\s\S]*?<\/script>/gi,' ').replace(/<style[\s\S]*?<\/style>/gi,' ')
+    .replace(/<[^>]+>/g,' ').replace(/&nbsp;/gi,' ').replace(/&amp;/gi,'&').replace(/&#39;/g,"'").replace(/&quot;/gi,'"')
+    .replace(/\s+/g,' ').trim();
+}
+async function splTeamCoach(teamName) {
+  const slug=splSlugForTeam(teamName); if (!slug) return null;
+  const cacheKey=\`spl:coach:\${slug}\`;
+  const cached=getCached(cacheKey); if (cached) { try { return JSON.parse(cached.body); } catch {} }
+  const urls=[\`https://www.spl.com.sa/en/teams/\${encodeURIComponent(slug)}\`,\`https://www.spl.com.sa/en/teams/\${encodeURIComponent(slug)}/index\`];
+  for (const url of urls) {
+    try {
+      const response=await fetchWithTimeout(url,{headers:{accept:'text/html,application/xhtml+xml','user-agent':'Mozilla/5.0 NinetyPlus/0.8.6'}},10000);
+      if (!response.ok) continue;
+      const text=htmlText(await response.text());
+      const match=text.match(/\bCoach\s+(.{2,100}?)\s+(?:Position|Wins|Matches|Website|Latest|Fixtures|Standings)\b/i);
+      const name=match?.[1]?.trim();
+      if (name) { const coach={name,source:'spl'}; putCache(cacheKey,{status:200,ok:true,body:JSON.stringify(coach)},10800); return coach; }
+    } catch {}
+  }
+  return null;
+}
 async function espnMatchDetail(match) {
   const league=findESPNLeagueForMatch(match); const eventId=match?.providerIds?.espn;
   if (!league || !eventId) return null;
   const url=\`\${ESPN_SITE}/\${encodeURIComponent(league.code)}/summary?event=\${encodeURIComponent(eventId)}\`;
-  const response=await fetchWithTimeout(url,{headers:{accept:'application/json','user-agent':'NinetyPlus-Backend/0.8.5'}},10000);
+  const response=await fetchWithTimeout(url,{headers:{accept:'application/json','user-agent':'NinetyPlus-Backend/0.8.6'}},10000);
   if (!response.ok) return null;
   const raw=await response.json();
   const detail=normalizeESPNDetail(raw);
   const missing=(detail.lineups || []).filter(lineup=>!lineup?.coach?.name && lineup?.team?.id);
   await Promise.all(missing.map(async lineup=>{
-    const coach=await espnTeamCoach(league.code,lineup.team.id);
+    let coach=await espnTeamCoach(league.code,lineup.team.id);
+    if (!coach && league.code === 'ksa.1') coach=await splTeamCoach(lineup?.team?.name);
     if (coach) lineup.coach=coach;
   }));
   return detail;
 }`,
-  'team coach endpoint fallback'
+  'official Saudi coach fallback'
 );
 
-s = s.replaceAll("version:'0.8.2'", "version:'0.8.5'");
-s = s.replaceAll("version:'0.8.3'", "version:'0.8.5'");
-s = s.replaceAll("version:'0.8.4'", "version:'0.8.5'");
-s = s.replaceAll('90+ backend v0.8.2 listening', '90+ backend v0.8.5 listening');
-s = s.replaceAll('90+ backend v0.8.3 listening', '90+ backend v0.8.5 listening');
-s = s.replaceAll('90+ backend v0.8.4 listening', '90+ backend v0.8.5 listening');
+s = s.replaceAll("version:'0.8.2'", "version:'0.8.6'");
+s = s.replaceAll("version:'0.8.3'", "version:'0.8.6'");
+s = s.replaceAll("version:'0.8.4'", "version:'0.8.6'");
+s = s.replaceAll("version:'0.8.5'", "version:'0.8.6'");
+s = s.replaceAll('90+ backend v0.8.2 listening', '90+ backend v0.8.6 listening');
+s = s.replaceAll('90+ backend v0.8.3 listening', '90+ backend v0.8.6 listening');
+s = s.replaceAll('90+ backend v0.8.4 listening', '90+ backend v0.8.6 listening');
+s = s.replaceAll('90+ backend v0.8.5 listening', '90+ backend v0.8.6 listening');
