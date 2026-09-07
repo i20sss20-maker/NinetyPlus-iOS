@@ -6,14 +6,22 @@ def get(url):
     parts=urllib.parse.urlsplit(url)
     url=urllib.parse.urlunsplit((parts.scheme,parts.netloc,urllib.parse.quote(parts.path,safe='/%'),parts.query,''))
     try:
-        req=urllib.request.Request(url,headers={'User-Agent':'NinetyPlus-QA/1.0','Accept':'*/*'})
+        req=urllib.request.Request(url,headers={'User-Agent':'NinetyPlus-QA/1.1','Accept':'*/*'})
         with urllib.request.urlopen(req,timeout=18) as response: return response.status,response.read(4000001),dict(response.headers)
+    except urllib.error.HTTPError as error:
+        try: body=error.read(4000001)
+        except Exception: body=b''
+        return error.code,body,dict(error.headers or {})
     except Exception as error: return getattr(error,'code',None),b'',{'error':str(error)}
 status,body,_=get(BASE+'api/health')
 try: health=json.loads(body)
 except Exception: health={}
-report['health']={'status':status,**{k:health.get(k) for k in ['ok','providerRequestsToday','providerDailyBudget']}}
-if health.get('ok') and health.get('providerRequestsToday',90)+4 <= health.get('providerDailyBudget',0):
+report['health']={'status':status,**{k:health.get(k) for k in ['ok','providerRequestsToday','providerDailyBudget','providerRemoteBlocked','providerBudgetRemaining']}}
+remaining=health.get('providerBudgetRemaining')
+if remaining is None:
+    remaining=max(0,(health.get('providerDailyBudget') or 0)-(health.get('providerRequestsToday') or 0))
+provider_ready=health.get('ok') and not health.get('providerRemoteBlocked') and remaining >= 1
+if provider_ready:
     riyadh=datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=3)))
     today=riyadh.date()
     season=riyadh.year if riyadh.month >= 7 else riyadh.year-1
@@ -28,7 +36,8 @@ if health.get('ok') and health.get('providerRequestsToday',90)+4 <= health.get('
         try: value=json.loads(body)
         except Exception: value={}
         result=value.get('response',[])
-        check={'query':query,'status':status,'errors':value.get('errors') or value.get('error'),'count':len(result) if isinstance(result,list) else None}
+        provider_error=value.get('errors') or value.get('error')
+        check={'query':query,'status':status,'errors':provider_error,'count':len(result) if isinstance(result,list) else None}
         if query['path']=='teams': check['saudiClubPresent']=any(x.get('team',{}).get('id')==2938 for x in result)
         if query['path']=='players':
             stats=[]
@@ -41,8 +50,12 @@ if health.get('ok') and health.get('providerRequestsToday',90)+4 <= health.get('
             check['teams']=[s.get('team',{}).get('name') for s in stats[:3]]
             check['goals']=[s.get('goals',{}).get('total') for s in stats[:3]]
         report['checks'].append(check)
+        error_text=json.dumps(provider_error,ensure_ascii=False).lower() if provider_error else ''
+        if status==429 or 'daily_limit' in error_text or 'request limit for the day' in error_text:
+            report['checks'].append({'skipped':'remaining football probes','reason':'provider daily limit detected'})
+            break
 else:
-    report['checks'].append({'skipped':'football probes','reason':'daily provider budget too low or backend unhealthy'})
+    report['checks'].append({'skipped':'football probes','reason':'provider blocked, budget exhausted, or backend unhealthy'})
 for name,url in [('hihi2','https://hihi2.com/feed'),('france24','https://www.france24.com/ar/رياضة/rss')]:
     status,body,headers=get(url); entry={'name':name,'status':status}
     try:
