@@ -21,14 +21,12 @@ struct EnhancedNewsView: View {
             return searched.filter { article in
                 let t = article.title.lowercased()
                 return t.contains("السعود") || t.contains("الهلال") || t.contains("النصر") || t.contains("الاتحاد") || t.contains("الأهلي") || t.contains("روشن")
-            }
+            }.sorted { $0.date > $1.date }
         case "الانتقالات":
             return searched.filter { article in
                 let t = article.title.lowercased()
                 return t.contains("انتقال") || t.contains("صفقة") || t.contains("تعاقد") || t.contains("transfer")
-            }
-        case "الأحدث":
-            return searched.sorted { $0.date > $1.date }
+            }.sorted { $0.date > $1.date }
         default:
             return searched.sorted { $0.date > $1.date }
         }
@@ -36,6 +34,7 @@ struct EnhancedNewsView: View {
 
     private var hero: RealArticle? { filtered.first }
     private var remaining: [RealArticle] { Array(filtered.dropFirst()) }
+    private var hasActiveFilter: Bool { !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || filter != "الكل" }
 
     var body: some View {
         NavigationStack {
@@ -49,6 +48,8 @@ struct EnhancedNewsView: View {
                         ProgressView("جاري جلب أحدث الأخبار...")
                             .tint(AppTheme.green)
                             .padding(.top, 80)
+                    } else if let error = store.errorMessage, validNews.isEmpty {
+                        errorState(error)
                     } else if let hero {
                         heroCard(hero)
                         sectionHeader
@@ -56,13 +57,7 @@ struct EnhancedNewsView: View {
                             articleRow(article)
                         }
                     } else {
-                        ContentUnavailableView(
-                            "لا توجد أخبار موثوقة متاحة الآن",
-                            systemImage: "newspaper",
-                            description: Text(store.errorMessage ?? "جرّب التحديث بعد قليل.")
-                        )
-                        .foregroundStyle(.white)
-                        .padding(.top, 70)
+                        emptyState
                     }
                 }
                 .padding(.bottom, 28)
@@ -77,9 +72,9 @@ struct EnhancedNewsView: View {
     private var sourceStatus: some View {
         HStack(spacing: 10) {
             Image(systemName: store.errorMessage == nil ? "checkmark.shield.fill" : "clock.arrow.circlepath")
-                .foregroundStyle(AppTheme.green)
+                .foregroundStyle(store.errorMessage == nil ? AppTheme.green : .orange)
             VStack(alignment: .leading, spacing: 2) {
-                Text(store.errorMessage == nil ? "أخبار من مصادر فعلية" : "نعرض آخر أخبار محفوظة")
+                Text(store.errorMessage == nil ? "أخبار من مصادر فعلية" : (validNews.isEmpty ? "تعذر تحديث الأخبار" : "نعرض آخر أخبار محفوظة"))
                     .font(.caption.bold())
                     .foregroundStyle(.white)
                 if let lastUpdated = store.lastUpdated {
@@ -90,6 +85,11 @@ struct EnhancedNewsView: View {
             }
             Spacer()
             if store.isLoading { ProgressView().tint(AppTheme.green).scaleEffect(0.8) }
+            else if store.errorMessage != nil {
+                Button { Task { await store.refresh() } } label: {
+                    Image(systemName: "arrow.clockwise").foregroundStyle(AppTheme.green)
+                }.buttonStyle(.plain)
+            }
         }
         .padding(12)
         .background(AppTheme.card, in: RoundedRectangle(cornerRadius: 16))
@@ -125,6 +125,41 @@ struct EnhancedNewsView: View {
         }
         .padding(.horizontal, 16)
         .padding(.top, 2)
+    }
+
+    private func errorState(_ message: String) -> some View {
+        VStack(spacing: 12) {
+            Image(systemName: "wifi.exclamationmark").font(.system(size: 42)).foregroundStyle(.orange)
+            Text("تعذر جلب الأخبار").font(.headline)
+            Text(message).font(.caption).foregroundStyle(AppTheme.muted).multilineTextAlignment(.center)
+            Button { Task { await store.refresh() } } label: {
+                Label("إعادة المحاولة", systemImage: "arrow.clockwise")
+                    .font(.subheadline.bold()).foregroundStyle(.black)
+                    .padding(.horizontal, 16).padding(.vertical, 9)
+                    .background(AppTheme.green, in: Capsule())
+            }
+        }
+        .frame(maxWidth: .infinity).padding(24)
+        .background(AppTheme.card, in: RoundedRectangle(cornerRadius: 18))
+        .padding(.horizontal, 16).padding(.top, 30)
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "newspaper").font(.system(size: 44)).foregroundStyle(AppTheme.green)
+            Text(hasActiveFilter ? "لا توجد أخبار مطابقة" : "لا توجد أخبار متاحة الآن").font(.headline)
+            Text(hasActiveFilter ? "غيّر البحث أو التصنيف لعرض نتائج أخرى." : "اسحب الصفحة للتحديث أو جرّب مرة أخرى بعد قليل.")
+                .font(.caption).foregroundStyle(AppTheme.muted).multilineTextAlignment(.center)
+            if hasActiveFilter {
+                Button {
+                    query = ""
+                    filter = "الكل"
+                } label: {
+                    Label("مسح الفلاتر", systemImage: "line.3.horizontal.decrease.circle")
+                        .font(.subheadline.bold()).foregroundStyle(AppTheme.green)
+                }.buttonStyle(.plain)
+            }
+        }.padding(.top, 70)
     }
 
     private func heroCard(_ article: RealArticle) -> some View {
