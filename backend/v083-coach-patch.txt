@@ -1,4 +1,4 @@
-// v0.8.3 — complete lineup metadata without spending API-Football quota.
+// v0.8.4 — complete lineup metadata without spending API-Football quota.
 replaceOnce(
   "function normalizeESPNDetail(value) {",
   `function normalizeESPNCoach(value) {
@@ -14,6 +14,28 @@ replaceOnce(
   if (!name) return null;
   return {id:person?.id?.toString?.() || null,name,photo:person?.headshot?.href || person?.photo || null};
 }
+function findCoachDeep(value,depth=0,seen=new Set()) {
+  if (!value || typeof value !== 'object' || depth > 7 || seen.has(value)) return null;
+  seen.add(value);
+  if (Array.isArray(value)) {
+    for (const item of value) { const found=findCoachDeep(item,depth+1,seen); if (found) return found; }
+    return null;
+  }
+  for (const [key,candidate] of Object.entries(value)) {
+    const label=String(key).toLowerCase();
+    if (label.includes('coach') || label.includes('manager')) {
+      const coach=normalizeESPNCoach(candidate); if (coach) return coach;
+    }
+  }
+  const role=String(value?.role || value?.position?.displayName || value?.position?.name || value?.type?.text || value?.type?.name || '').toLowerCase();
+  if (role.includes('coach') || role.includes('manager') || role.includes('head coach')) {
+    const coach=normalizeESPNCoach(value); if (coach) return coach;
+  }
+  for (const candidate of Object.values(value)) {
+    const found=findCoachDeep(candidate,depth+1,seen); if (found) return found;
+  }
+  return null;
+}
 function coachCandidateFromRoster(value) {
   const direct=[value?.coach,value?.headCoach,value?.team?.coach,value?.team?.headCoach];
   for (const candidate of direct) { const coach=normalizeESPNCoach(candidate); if (coach) return coach; }
@@ -26,7 +48,7 @@ function coachCandidateFromRoster(value) {
       const coach=normalizeESPNCoach(member); if (coach) return coach;
     }
   }
-  return null;
+  return findCoachDeep(value);
 }
 function normalizeESPNDetail(value) {`,
   'ESPN coach normalizer'
@@ -34,7 +56,7 @@ function normalizeESPNDetail(value) {`,
 
 replaceOnce(
   "    formation:r?.formation || r?.formations?.[0]?.name || null,\n    players:",
-  "    formation:r?.formation || r?.formations?.[0]?.name || null,\n    coach:normalizeESPNCoach(r?.coach || r?.headCoach || r?.coaches || r?.team?.coach || r?.team?.headCoach),\n    players:",
+  "    formation:r?.formation || r?.formations?.[0]?.name || null,\n    coach:normalizeESPNCoach(r?.coach || r?.headCoach || r?.coaches || r?.team?.coach || r?.team?.headCoach) || findCoachDeep(r),\n    players:",
   'summary lineup coach'
 );
 
@@ -51,29 +73,49 @@ replaceOnce(
   if (!leagueCode || !teamId) return null;
   const cacheKey=\`espn:coach:\${leagueCode}:\${teamId}\`;
   const cached=getCached(cacheKey); if (cached) { try { return JSON.parse(cached.body); } catch {} }
-  const url=\`\${ESPN_SITE}/\${encodeURIComponent(leagueCode)}/teams/\${encodeURIComponent(teamId)}/roster\`;
-  try {
-    const response=await fetchWithTimeout(url,{headers:{accept:'application/json','user-agent':'NinetyPlus-Backend/0.8.3'}},10000);
+  const headers={accept:'application/json','user-agent':'NinetyPlus-Backend/0.8.4'};
+  const urls=[
+    \`\${ESPN_SITE}/\${encodeURIComponent(leagueCode)}/teams/\${encodeURIComponent(teamId)}/roster\`,
+    \`\${ESPN_SITE}/\${encodeURIComponent(leagueCode)}/teams/\${encodeURIComponent(teamId)}\`
+  ];
+  const results=await Promise.allSettled(urls.map(async url=>{
+    const response=await fetchWithTimeout(url,{headers},10000);
     if (!response.ok) return null;
-    const value=await response.json();
-    const coach=coachCandidateFromRoster(value);
-    if (coach) putCache(cacheKey,{status:200,ok:true,body:JSON.stringify(coach)},21600);
-    return coach;
-  } catch { return null; }
+    return response.json();
+  }));
+  for (const entry of results) {
+    if (entry.status !== 'fulfilled' || !entry.value) continue;
+    const coach=coachCandidateFromRoster(entry.value);
+    if (coach) { putCache(cacheKey,{status:200,ok:true,body:JSON.stringify(coach)},21600); return coach; }
+  }
+  return null;
 }
 async function espnMatchDetail(match) {
   const league=findESPNLeagueForMatch(match); const eventId=match?.providerIds?.espn;
   if (!league || !eventId) return null;
   const url=\`\${ESPN_SITE}/\${encodeURIComponent(league.code)}/summary?event=\${encodeURIComponent(eventId)}\`;
-  const response=await fetchWithTimeout(url,{headers:{accept:'application/json','user-agent':'NinetyPlus-Backend/0.8.3'}},10000);
+  const response=await fetchWithTimeout(url,{headers:{accept:'application/json','user-agent':'NinetyPlus-Backend/0.8.4'}},10000);
   if (!response.ok) return null;
-  const detail=normalizeESPNDetail(await response.json());
+  const raw=await response.json();
+  const detail=normalizeESPNDetail(raw);
+  const summaryCoachCandidates=[];
+  const walk=(value,depth=0)=>{
+    if (!value || typeof value !== 'object' || depth>7) return;
+    if (Array.isArray(value)) { value.forEach(item=>walk(item,depth+1)); return; }
+    const coach=findCoachDeep(value,0,new Set()); if (coach) summaryCoachCandidates.push(coach);
+  };
+  walk(raw?.gameInfo); walk(raw?.header);
   const missing=(detail.lineups || []).filter(lineup=>!lineup?.coach?.name && lineup?.team?.id);
-  await Promise.all(missing.map(async lineup=>{ const coach=await espnTeamCoach(league.code,lineup.team.id); if (coach) lineup.coach=coach; }));
+  await Promise.all(missing.map(async lineup=>{
+    const coach=await espnTeamCoach(league.code,lineup.team.id);
+    if (coach) lineup.coach=coach;
+  }));
   return detail;
 }`,
-  'roster coach fallback'
+  'team detail coach fallback'
 );
 
-s = s.replaceAll("version:'0.8.2'", "version:'0.8.3'");
-s = s.replaceAll('90+ backend v0.8.2 listening', '90+ backend v0.8.3 listening');
+s = s.replaceAll("version:'0.8.2'", "version:'0.8.4'");
+s = s.replaceAll("version:'0.8.3'", "version:'0.8.4'");
+s = s.replaceAll('90+ backend v0.8.2 listening', '90+ backend v0.8.4 listening');
+s = s.replaceAll('90+ backend v0.8.3 listening', '90+ backend v0.8.4 listening');
