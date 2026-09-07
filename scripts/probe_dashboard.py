@@ -21,7 +21,7 @@ if health.get('ok') and health.get('providerRequestsToday',90)+4 <= health.get('
         {'path':'teams','search':'Ittihad'},
         {'path':'fixtures','date':str(today+datetime.timedelta(days=1)),'timezone':'Asia/Riyadh'},
         {'path':'players','id':'874','season':str(season)},
-        {'path':'players','id':'874','season':str(season-1)},
+        {'path':'players','id':'874','season':'2024'},
     ]
     for query in queries:
         status,body,headers=get(BASE+'api/football?'+urllib.parse.urlencode(query)); report['footballRequests']+=1
