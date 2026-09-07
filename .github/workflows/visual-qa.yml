@@ -17,6 +17,7 @@ jobs:
         run: |
           python3 scripts/apply_release_ui_fixes.py
           python3 scripts/apply_match_metadata_fixes.py
+          python3 scripts/apply_lineup_ui_fixes.py
       - name: Test RSS images and dates
         run: |
           swiftc -swift-version 5 -parse-as-library Sources/Core/EditorialFeed.swift Tests/EditorialFeedTests.swift -o /tmp/editorial-tests
