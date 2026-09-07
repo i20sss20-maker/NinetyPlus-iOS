@@ -42,7 +42,7 @@ replaceOnce(
 `async function espnMatchDetail(match) {
   const league=findESPNLeagueForMatch(match); const eventId=match?.providerIds?.espn;
   if (!league || !eventId) return null;
-  const url=\`${ESPN_SITE}/\${encodeURIComponent(league.code)}/summary?event=\${encodeURIComponent(eventId)}\`;
+  const url=\`\${ESPN_SITE}/\${encodeURIComponent(league.code)}/summary?event=\${encodeURIComponent(eventId)}\`;
   const response=await fetchWithTimeout(url,{headers:{accept:'application/json','user-agent':'NinetyPlus-Backend/0.8'}},10000);
   if (!response.ok) return null;
   return normalizeESPNDetail(await response.json());
@@ -51,7 +51,7 @@ replaceOnce(
   if (!leagueCode || !teamId) return null;
   const cacheKey=\`espn:coach:\${leagueCode}:\${teamId}\`;
   const cached=getCached(cacheKey); if (cached) { try { return JSON.parse(cached.body); } catch {} }
-  const url=\`${ESPN_SITE}/\${encodeURIComponent(leagueCode)}/teams/\${encodeURIComponent(teamId)}/roster\`;
+  const url=\`\${ESPN_SITE}/\${encodeURIComponent(leagueCode)}/teams/\${encodeURIComponent(teamId)}/roster\`;
   try {
     const response=await fetchWithTimeout(url,{headers:{accept:'application/json','user-agent':'NinetyPlus-Backend/0.8.3'}},10000);
     if (!response.ok) return null;
@@ -64,7 +64,7 @@ replaceOnce(
 async function espnMatchDetail(match) {
   const league=findESPNLeagueForMatch(match); const eventId=match?.providerIds?.espn;
   if (!league || !eventId) return null;
-  const url=\`${ESPN_SITE}/\${encodeURIComponent(league.code)}/summary?event=\${encodeURIComponent(eventId)}\`;
+  const url=\`\${ESPN_SITE}/\${encodeURIComponent(league.code)}/summary?event=\${encodeURIComponent(eventId)}\`;
   const response=await fetchWithTimeout(url,{headers:{accept:'application/json','user-agent':'NinetyPlus-Backend/0.8.3'}},10000);
   if (!response.ok) return null;
   const detail=normalizeESPNDetail(await response.json());
