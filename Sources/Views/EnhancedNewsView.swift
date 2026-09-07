@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct EnhancedNewsView: View {
-    @StateObject private var store = SportsStore.shared
+    @StateObject private var store = EditorialStore.shared
     @State private var query = ""
     @State private var filter = "الكل"
 
@@ -130,10 +130,8 @@ struct EnhancedNewsView: View {
     private func heroCard(_ article: RealArticle) -> some View {
         Group {
             if let url = article.url {
-                Link(destination: url) {
-                    heroContent(article)
-                }
-                .buttonStyle(.plain)
+                Link(destination: url) { heroContent(article) }
+                    .buttonStyle(.plain)
             }
         }
     }
@@ -150,23 +148,13 @@ struct EnhancedNewsView: View {
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
                 .background(AppTheme.green, in: Capsule())
-
                 Spacer()
-
-                Text(article.title)
-                    .font(.title3.bold())
-                    .foregroundStyle(.white)
-                    .multilineTextAlignment(.leading)
-                    .lineLimit(4)
-
+                Text(article.title).font(.title3.bold()).foregroundStyle(.white).multilineTextAlignment(.leading).lineLimit(4)
                 HStack {
                     Label(article.source.isEmpty ? "مصدر إخباري" : article.source, systemImage: "link.circle.fill")
-                        .font(.caption.bold())
-                        .foregroundStyle(AppTheme.green)
+                        .font(.caption.bold()).foregroundStyle(AppTheme.green)
                     Spacer()
-                    Text(article.date, style: .relative)
-                        .font(.caption2)
-                        .foregroundStyle(AppTheme.muted)
+                    Text(article.date, style: .relative).font(.caption2).foregroundStyle(AppTheme.muted)
                 }
             }
             .padding(18)
@@ -182,31 +170,17 @@ struct EnhancedNewsView: View {
                 HStack(alignment: .top, spacing: 13) {
                     ZStack {
                         RoundedRectangle(cornerRadius: 14).fill(AppTheme.green.opacity(0.12))
-                        Image(systemName: icon(for: article.title))
-                            .font(.title3.bold())
-                            .foregroundStyle(AppTheme.green)
+                        Image(systemName: icon(for: article.title)).font(.title3.bold()).foregroundStyle(AppTheme.green)
                     }
                     .frame(width: 58, height: 58)
-
                     VStack(alignment: .leading, spacing: 8) {
-                        Text(article.title)
-                            .font(.headline)
-                            .foregroundStyle(.white)
-                            .multilineTextAlignment(.leading)
-                            .lineLimit(3)
-
+                        Text(article.title).font(.headline).foregroundStyle(.white).multilineTextAlignment(.leading).lineLimit(3)
                         HStack(spacing: 7) {
-                            Text(article.source.isEmpty ? "مصدر إخباري" : article.source)
-                                .font(.caption.bold())
-                                .foregroundStyle(AppTheme.green)
-                                .lineLimit(1)
+                            Text(article.source.isEmpty ? "مصدر إخباري" : article.source).font(.caption.bold()).foregroundStyle(AppTheme.green).lineLimit(1)
                             Text("•").foregroundStyle(AppTheme.muted)
-                            Text(article.date, style: .relative)
-                                .font(.caption2)
-                                .foregroundStyle(AppTheme.muted)
+                            Text(article.date, style: .relative).font(.caption2).foregroundStyle(AppTheme.muted)
                             Spacer()
-                            Image(systemName: "arrow.up.right.square")
-                                .foregroundStyle(AppTheme.muted)
+                            Image(systemName: "arrow.up.right.square").foregroundStyle(AppTheme.muted)
                         }
                     }
                 }
