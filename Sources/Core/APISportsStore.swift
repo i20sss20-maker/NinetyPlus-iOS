@@ -94,7 +94,10 @@ final class APISportsStore: ObservableObject {
 
     private var seasonCandidates: [Int] {
         let current = APIFootballClient.currentSeason
-        return [current, current - 1]
+        // Production diagnostics on the current free plan explicitly allow 2022...2024.
+        // Always try the real current season first so an upgraded plan starts using it
+        // automatically; otherwise fall back to 2024 and label it as 2024–25 in the UI.
+        return current == 2024 ? [current] : [current, 2024]
     }
 
     func refreshToday(force: Bool = false) async {
