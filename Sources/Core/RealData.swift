@@ -107,9 +107,6 @@ final class EditorialStore: ObservableObject {
     }
 }
 
-// Temporary source compatibility while legacy view names are being removed.
-typealias SportsStore = EditorialStore
-
 private final class RSSParser: NSObject, XMLParserDelegate {
     private let data: Data
     private var items: [RealArticle] = []
