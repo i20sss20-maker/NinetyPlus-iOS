@@ -27,8 +27,6 @@ struct NinetyPlusBackendHealth: Decodable {
 
 enum APIFootballClient {
     static let backendURLDefaultsName = "ninetyPlusBackendURL"
-    // Legacy compile compatibility only. The app no longer reads or sends a provider key.
-    static let keyDefaultsName = "ninetyplusDeprecatedProviderKey"
 
     static var currentSeason: Int {
         let comps = Calendar.current.dateComponents([.year, .month], from: Date())
@@ -45,8 +43,6 @@ enum APIFootballClient {
 
     static var hasBackend: Bool { backendURL != nil }
     static var isConfigured: Bool { hasBackend }
-    // Legacy views historically checked `hasKey`; it now means backend readiness only.
-    static var hasKey: Bool { isConfigured }
 
     static func health() async throws -> NinetyPlusBackendHealth {
         guard let backendURL else { throw APIFootballError.missingConfiguration }
