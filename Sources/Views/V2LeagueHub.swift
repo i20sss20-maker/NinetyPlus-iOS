@@ -78,20 +78,45 @@ struct V2LeagueHubView: View {
     }
 
     private var hero: some View {
-        HStack(spacing: 14) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 20).fill(AppTheme.green.opacity(0.12))
-                Image(systemName: "trophy.fill").font(.system(size: 34, weight: .bold)).foregroundStyle(AppTheme.green)
-            }.frame(width: 76, height: 76)
-            VStack(alignment: .leading, spacing: 5) {
-                Text(league.arabicName).font(.title2.bold())
-                Text(league.englishName).font(.caption).foregroundStyle(AppTheme.muted)
-                Text("ترتيب • مباريات • هدافون • فرق").font(.caption2).foregroundStyle(AppTheme.green)
+        ZStack(alignment: .bottomLeading) {
+            RoundedRectangle(cornerRadius: 26, style: .continuous)
+                .fill(LinearGradient(colors: [AppTheme.cardRaised, AppTheme.greenDeep.opacity(0.52)], startPoint: .topTrailing, endPoint: .bottomLeading))
+            Circle()
+                .fill(AppTheme.green.opacity(0.08))
+                .frame(width: 180, height: 180)
+                .offset(x: -48, y: 65)
+            HStack(spacing: 15) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .fill(Color.white.opacity(0.07))
+                    Image(systemName: "trophy.fill")
+                        .font(.system(size: 36, weight: .bold))
+                        .foregroundStyle(AppTheme.green)
+                }.frame(width: 78, height: 78)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(league.arabicName)
+                        .font(.system(size: 24, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white)
+                    Text(league.englishName)
+                        .font(.caption)
+                        .foregroundStyle(AppTheme.muted)
+                        .lineLimit(1)
+                    HStack(spacing: 7) {
+                        Label("\(APIFootballClient.currentSeason)", systemImage: "calendar")
+                        Text("•")
+                        Text("بيانات مباشرة")
+                    }
+                    .font(.caption2.bold())
+                    .foregroundStyle(AppTheme.green)
+                }
+                Spacer(minLength: 0)
             }
-            Spacer()
+            .padding(19)
         }
-        .padding(18).background(AppTheme.card, in: RoundedRectangle(cornerRadius: 22))
-        .padding(.horizontal, 16).padding(.top, 8)
+        .frame(minHeight: 126)
+        .overlay(RoundedRectangle(cornerRadius: 26, style: .continuous).stroke(AppTheme.border, lineWidth: 1))
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
     }
 
     @ViewBuilder private var content: some View {
@@ -108,42 +133,70 @@ struct V2LeagueHubView: View {
             if standings.isEmpty {
                 if mayShowEmpty { empty("الترتيب غير متاح من المصدر حاليًا", icon: "tablecells") }
             } else {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    VStack(spacing: 0) {
-                        HStack(spacing: 8) {
-                            Text("#").frame(width: 28)
-                            Text("الفريق").frame(width: 165, alignment: .leading)
-                            Text("ل").frame(width: 28)
-                            Text("ف").frame(width: 28)
-                            Text("ت").frame(width: 28)
-                            Text("خ").frame(width: 28)
-                            Text("+/-").frame(width: 38)
-                            Text("ن").frame(width: 40)
+                VStack(spacing: 10) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("جدول الترتيب").font(.headline)
+                            Text("ل = لعب • ف = فوز • ت = تعادل • خ = خسارة").font(.caption2).foregroundStyle(AppTheme.muted)
                         }
-                        .font(.caption.bold()).foregroundStyle(AppTheme.muted)
-                        .padding(.horizontal, 12).padding(.vertical, 12).background(AppTheme.card)
-                        ForEach(standings) { row in
+                        Spacer()
+                        Text("ن = نقاط").font(.caption2.bold()).foregroundStyle(AppTheme.green)
+                    }
+                    .padding(.horizontal, 16)
+
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        VStack(spacing: 0) {
                             HStack(spacing: 8) {
-                                Text("\(row.rank)").frame(width: 28).foregroundStyle(row.rank <= 4 ? AppTheme.green : .white)
-                                HStack(spacing: 8) {
-                                    RemoteBadge(url: row.logo).frame(width: 28, height: 28)
-                                    Text(row.team).lineLimit(1)
-                                }.frame(width: 165, alignment: .leading)
-                                Text("\(row.played)").frame(width: 28)
-                                Text("\(row.win)").frame(width: 28)
-                                Text("\(row.draw)").frame(width: 28)
-                                Text("\(row.lose)").frame(width: 28)
-                                Text("\(row.goalDifference)").frame(width: 38)
-                                Text("\(row.points)").bold().frame(width: 40)
+                                Text("#").frame(width: 30)
+                                Text("الفريق").frame(width: 174, alignment: .leading)
+                                Text("ل").frame(width: 30)
+                                Text("ف").frame(width: 30)
+                                Text("ت").frame(width: 30)
+                                Text("خ").frame(width: 30)
+                                Text("+/-").frame(width: 40)
+                                Text("ن").frame(width: 42)
                             }
-                            .font(.subheadline).foregroundStyle(.white)
+                            .font(.caption.bold()).foregroundStyle(AppTheme.muted)
                             .padding(.horizontal, 12).padding(.vertical, 12)
-                            .background(row.rank % 2 == 0 ? AppTheme.soft : Color.clear)
+                            .background(AppTheme.cardRaised)
+
+                            ForEach(standings) { row in
+                                HStack(spacing: 8) {
+                                    ZStack {
+                                        Circle().fill(rankColor(row.rank).opacity(row.rank <= 4 ? 0.15 : 0.06))
+                                        Text("\(row.rank)").font(.caption.bold()).foregroundStyle(rankColor(row.rank))
+                                    }.frame(width: 30, height: 30)
+                                    HStack(spacing: 8) {
+                                        RemoteBadge(url: row.logo).frame(width: 30, height: 30)
+                                        Text(SportsArabic.team(row.team)).lineLimit(1)
+                                    }.frame(width: 174, alignment: .leading)
+                                    Text("\(row.played)").frame(width: 30)
+                                    Text("\(row.win)").frame(width: 30)
+                                    Text("\(row.draw)").frame(width: 30)
+                                    Text("\(row.lose)").frame(width: 30)
+                                    Text(row.goalDifference > 0 ? "+\(row.goalDifference)" : "\(row.goalDifference)")
+                                        .frame(width: 40)
+                                        .foregroundStyle(row.goalDifference > 0 ? AppTheme.green : (row.goalDifference < 0 ? .orange : AppTheme.muted))
+                                    Text("\(row.points)").fontWeight(.bold).frame(width: 42)
+                                }
+                                .font(.subheadline).foregroundStyle(.white)
+                                .padding(.horizontal, 12).padding(.vertical, 10)
+                                .background(row.rank % 2 == 0 ? AppTheme.soft : Color.clear)
+                            }
                         }
-                    }.frame(minWidth: 430)
+                        .frame(minWidth: 454)
+                        .background(AppTheme.card, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(AppTheme.border, lineWidth: 1))
+                        .padding(.horizontal, 16)
+                    }
                 }
             }
         }
+    }
+
+    private func rankColor(_ rank: Int) -> Color {
+        if rank <= 4 { return AppTheme.green }
+        return .white
     }
 
     private var matchesView: some View {
@@ -151,6 +204,11 @@ struct V2LeagueHubView: View {
             if matches.isEmpty {
                 if mayShowEmpty { empty("مباريات البطولة غير متاحة حاليًا", icon: "calendar") }
             } else {
+                HStack {
+                    Text("آخر المباريات والقادمة").font(.headline)
+                    Spacer()
+                    Text("\(matches.count)").font(.caption.bold()).foregroundStyle(AppTheme.green)
+                }.padding(.horizontal, 16)
                 ForEach(matches) { match in
                     NavigationLink { V2MatchCenterView(match: match) } label: {
                         APICompactMatchCard(match: match)
@@ -165,28 +223,45 @@ struct V2LeagueHubView: View {
             if scorers.isEmpty {
                 if mayShowEmpty { empty("قائمة الهدافين غير متاحة من المصدر حاليًا", icon: "figure.soccer") }
             } else {
+                HStack {
+                    Text("الهدافون").font(.headline)
+                    Spacer()
+                    Text("\(scorers.count) لاعب").font(.caption).foregroundStyle(AppTheme.muted)
+                }.padding(.horizontal, 16)
+
                 ForEach(scorers) { scorer in
                     NavigationLink {
                         V2PlayerLookupView(playerID: scorer.playerID, fallbackName: scorer.name, photo: scorer.photo)
                     } label: {
                         HStack(spacing: 12) {
-                            Text("\(scorer.rank)").font(.headline.bold())
-                                .foregroundStyle(scorer.rank <= 3 ? AppTheme.green : .white).frame(width: 28)
-                            RemoteBadge(url: scorer.photo).frame(width: 50, height: 50)
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(scorer.name).font(.headline).foregroundStyle(.white)
+                            ZStack {
+                                Circle().fill(scorer.rank <= 3 ? AppTheme.green.opacity(0.15) : Color.white.opacity(0.05))
+                                Text("\(scorer.rank)")
+                                    .font(.subheadline.bold())
+                                    .foregroundStyle(scorer.rank <= 3 ? AppTheme.green : .white)
+                            }.frame(width: 34, height: 34)
+                            RemoteBadge(url: scorer.photo).frame(width: 56, height: 56)
+                            VStack(alignment: .leading, spacing: 5) {
+                                Text(scorer.name).font(.headline).foregroundStyle(.white).lineLimit(1)
                                 HStack(spacing: 6) {
-                                    RemoteBadge(url: scorer.teamLogo).frame(width: 18, height: 18)
-                                    Text(scorer.team)
+                                    RemoteBadge(url: scorer.teamLogo).frame(width: 20, height: 20)
+                                    Text(SportsArabic.team(scorer.team)).lineLimit(1)
+                                    if let nationality = SportsArabic.country(scorer.nationality), !nationality.isEmpty {
+                                        Text("•"); Text(nationality).lineLimit(1)
+                                    }
                                 }.font(.caption).foregroundStyle(AppTheme.muted)
                             }
-                            Spacer()
-                            VStack(alignment: .trailing, spacing: 3) {
-                                Text("\(scorer.goals)").font(.title3.bold()).foregroundStyle(AppTheme.green)
+                            Spacer(minLength: 4)
+                            VStack(spacing: 2) {
+                                Text("\(scorer.goals)").font(.system(size: 24, weight: .black, design: .rounded)).foregroundStyle(AppTheme.green)
                                 Text("هدف").font(.caption2).foregroundStyle(AppTheme.muted)
                             }
+                            .frame(minWidth: 42)
                         }
-                        .padding(14).background(AppTheme.card, in: RoundedRectangle(cornerRadius: 18)).padding(.horizontal, 16)
+                        .padding(14)
+                        .background(AppTheme.cardRaised, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(AppTheme.border, lineWidth: 1))
+                        .padding(.horizontal, 16)
                     }.buttonStyle(.plain)
                 }
             }
@@ -198,20 +273,35 @@ struct V2LeagueHubView: View {
             if standings.isEmpty {
                 if mayShowEmpty { empty("قائمة الفرق غير متاحة", icon: "shield") }
             } else {
+                HStack {
+                    Text("فرق البطولة").font(.headline)
+                    Spacer()
+                    Text("\(standings.count) فريق").font(.caption).foregroundStyle(AppTheme.muted)
+                }.padding(.horizontal, 16)
+
                 ForEach(standings) { row in
                     NavigationLink {
                         V2TeamLookupView(teamID: row.teamID, fallbackName: row.team, logo: row.logo)
                     } label: {
-                        HStack(spacing: 12) {
-                            RemoteBadge(url: row.logo).frame(width: 48, height: 48)
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(row.team).font(.headline).foregroundStyle(.white)
-                                Text("المركز \(row.rank) • \(row.points) نقطة").font(.caption).foregroundStyle(AppTheme.muted)
+                        HStack(spacing: 13) {
+                            RemoteBadge(url: row.logo).frame(width: 54, height: 54)
+                            VStack(alignment: .leading, spacing: 5) {
+                                Text(SportsArabic.team(row.team)).font(.headline).foregroundStyle(.white)
+                                HStack(spacing: 6) {
+                                    Text("المركز \(row.rank)")
+                                    Text("•")
+                                    Text("\(row.points) نقطة")
+                                    Text("•")
+                                    Text("\(row.played) مباراة")
+                                }.font(.caption).foregroundStyle(AppTheme.muted)
                             }
                             Spacer()
-                            Image(systemName: "chevron.left").foregroundStyle(AppTheme.muted)
+                            Image(systemName: "chevron.left").font(.caption.bold()).foregroundStyle(AppTheme.dimmed)
                         }
-                        .padding(14).background(AppTheme.card, in: RoundedRectangle(cornerRadius: 18)).padding(.horizontal, 16)
+                        .padding(14)
+                        .background(AppTheme.cardRaised, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(AppTheme.border, lineWidth: 1))
+                        .padding(.horizontal, 16)
                     }.buttonStyle(.plain)
                 }
             }
@@ -219,10 +309,15 @@ struct V2LeagueHubView: View {
     }
 
     private func empty(_ text: String, icon: String) -> some View {
-        VStack(spacing: 10) {
-            Image(systemName: icon).font(.title2).foregroundStyle(AppTheme.green)
+        VStack(spacing: 11) {
+            Image(systemName: icon).font(.system(size: 34, weight: .semibold)).foregroundStyle(AppTheme.green)
             Text(text).font(.subheadline).foregroundStyle(AppTheme.muted).multilineTextAlignment(.center)
-        }.frame(maxWidth: .infinity).padding(30)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(30)
+        .background(AppTheme.card, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(AppTheme.border, lineWidth: 1))
+        .padding(.horizontal, 16)
     }
 
     @MainActor private func loadActive(force: Bool = false) async {
@@ -290,8 +385,8 @@ struct V2TeamLookupView: View {
             } else {
                 ScrollView {
                     VStack(spacing: 16) {
-                        RemoteBadge(url: logo).frame(width: 72, height: 72)
-                        Text(fallbackName).font(.headline)
+                        RemoteBadge(url: logo).frame(width: 76, height: 76)
+                        Text(SportsArabic.team(fallbackName)).font(.headline)
                         PageLoadFeedback(loading: resource.isLoading || resource.key != teamID, hasValue: false, message: resource.errorMessage, updatedAt: nil) { retryID += 1 }
                         if resource.key == teamID && !resource.isLoading && resource.value != nil && resource.errorMessage == nil {
                             ContentUnavailableView("بيانات النادي غير متاحة من المصدر", systemImage: "shield")
@@ -338,7 +433,7 @@ struct V2PlayerLookupView: View {
             } else {
                 ScrollView {
                     VStack(spacing: 16) {
-                        RemoteBadge(url: photo).frame(width: 72, height: 72)
+                        RemoteBadge(url: photo).frame(width: 80, height: 80)
                         Text(fallbackName).font(.headline)
                         PageLoadFeedback(loading: resource.isLoading || resource.key != playerID, hasValue: false, message: resource.errorMessage, updatedAt: nil) { retryID += 1 }
                         if resource.key == playerID && !resource.isLoading && resource.value != nil && resource.errorMessage == nil {
