@@ -26,14 +26,57 @@ struct NinetyPlusBackendHealth: Decodable {
     let inFlightRequests: Int?
     let providerRequestsToday: Int?
     let providerDailyBudget: Int?
+    let providerBudgetRemaining: Int?
+    let providerRemoteBlocked: Bool?
     let time: String?
+
+    var allowsDirectProviderRequests: Bool {
+        guard ok, providerConfigured != false else { return false }
+        if providerRemoteBlocked == true { return false }
+        if let providerBudgetRemaining, providerBudgetRemaining <= 0 { return false }
+        if let used = providerRequestsToday, let daily = providerDailyBudget, daily > 0, used >= daily { return false }
+        return true
+    }
+}
+
+private actor ProviderAvailabilityGate {
+    private var allowed: Bool?
+    private var checkedAt: Date?
+    private let ttl: TimeInterval = 45
+
+    func allowsRequests() async -> Bool {
+        if let allowed, let checkedAt, Date().timeIntervalSince(checkedAt) < ttl { return allowed }
+        do {
+            let health = try await APIFootballClient.health()
+            let result = health.allowsDirectProviderRequests
+            allowed = result
+            checkedAt = Date()
+            return result
+        } catch {
+            // Health is an optimization, not a new single point of failure. If it
+            // cannot be read, let the normal request path determine availability.
+            allowed = nil
+            checkedAt = nil
+            return true
+        }
+    }
+
+    func markBlocked() {
+        allowed = false
+        checkedAt = Date()
+    }
+
+    func invalidate() {
+        allowed = nil
+        checkedAt = nil
+    }
 }
 
 enum APIFootballClient {
     static let backendURLDefaultsName = "ninetyPlusBackendURL"
+    private static let providerGate = ProviderAvailabilityGate()
 
     static var currentSeason: Int {
-        // Provider seasons are Gregorian even when iOS uses a Hijri calendar.
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(identifier: "Asia/Riyadh") ?? .current
         let comps = calendar.dateComponents([.year, .month], from: Date())
@@ -57,7 +100,7 @@ enum APIFootballClient {
         var request = URLRequest(url: url)
         request.timeoutInterval = 8
         request.cachePolicy = .reloadIgnoringLocalCacheData
-        request.setValue("NinetyPlus/2.0 iOS", forHTTPHeaderField: "User-Agent")
+        request.setValue("NinetyPlus/3.1 iOS", forHTTPHeaderField: "User-Agent")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         let data = try await perform(request, retryOnce: true)
         return try JSONDecoder().decode(NinetyPlusBackendHealth.self, from: data)
@@ -65,6 +108,7 @@ enum APIFootballClient {
 
     static func get<T: Decodable>(_ path: String, query: [URLQueryItem] = []) async throws -> T {
         guard let backendURL else { throw APIFootballError.missingConfiguration }
+        guard await providerGate.allowsRequests() else { throw APIFootballError.rateLimited }
 
         var components = URLComponents(url: backendURL.appending(path: "api/football"), resolvingAgainstBaseURL: false)!
         components.queryItems = [URLQueryItem(name: "path", value: path)] + query
@@ -73,18 +117,26 @@ enum APIFootballClient {
         var request = URLRequest(url: url)
         request.timeoutInterval = 18
         request.cachePolicy = .useProtocolCachePolicy
-        request.setValue("NinetyPlus/2.0 iOS", forHTTPHeaderField: "User-Agent")
+        request.setValue("NinetyPlus/3.1 iOS", forHTTPHeaderField: "User-Agent")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
 
-        let data = try await perform(request, retryOnce: true)
-        try Task.checkCancellation()
-        // A provider can return HTTP 200 with an errors object and response: [].
-        try FootballResponseGuard.validate(data)
         do {
-            return try JSONDecoder().decode(T.self, from: data)
-        } catch {
-            throw APIFootballError.badResponse
+            let data = try await perform(request, retryOnce: true)
+            try Task.checkCancellation()
+            try FootballResponseGuard.validate(data)
+            do {
+                return try JSONDecoder().decode(T.self, from: data)
+            } catch {
+                throw APIFootballError.badResponse
+            }
+        } catch APIFootballError.rateLimited {
+            await providerGate.markBlocked()
+            throw APIFootballError.rateLimited
         }
+    }
+
+    static func recheckProviderAvailability() async {
+        await providerGate.invalidate()
     }
 
     private static func perform(_ request: URLRequest, retryOnce: Bool) async throws -> Data {
