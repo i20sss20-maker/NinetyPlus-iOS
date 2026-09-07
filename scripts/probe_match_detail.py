@@ -11,7 +11,7 @@ OUT.parent.mkdir(parents=True, exist_ok=True)
 
 def get_json(path, params=None, timeout=20):
     query = ("?" + urlencode(params)) if params else ""
-    req = Request(BASE + path + query, headers={"User-Agent": "NinetyPlus-QA/1.3"})
+    req = Request(BASE + path + query, headers={"User-Agent": "NinetyPlus-QA/1.4"})
     with urlopen(req, timeout=timeout) as response:
         return response.status, json.load(response)
 
@@ -93,6 +93,8 @@ if len(lineup_summaries) < 2: raise SystemExit("production match probe: both tea
 if any(x["starters"] < 11 or x["namedPlayers"] < 11 for x in lineup_summaries):
     raise SystemExit("production match probe: incomplete starting lineups")
 if any(x["substitutes"] < 1 for x in lineup_summaries): raise SystemExit("production match probe: substitutes missing")
+if sum(1 for x in lineup_summaries if x["coach"]) < 2:
+    raise SystemExit("production match probe: both head coaches are required")
 
 stat_summaries = []
 for row in detail.get("statistics") or []:
