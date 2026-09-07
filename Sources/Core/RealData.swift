@@ -1,19 +1,5 @@
 import Foundation
 import SwiftUI
-import UserNotifications
-
-struct LiveMatch: Identifiable, Hashable, Codable {
-    let id: String
-    let league: String
-    let home: String
-    let away: String
-    let homeBadge: String?
-    let awayBadge: String?
-    let homeScore: String?
-    let awayScore: String?
-    let time: String
-    let status: String
-}
 
 struct RealArticle: Identifiable, Hashable, Codable {
     let id: UUID
@@ -31,51 +17,41 @@ struct RealArticle: Identifiable, Hashable, Codable {
     }
 }
 
-private struct SportsCache: Codable {
-    let matches: [LiveMatch]
+private struct EditorialCache: Codable {
     let news: [RealArticle]
     let transfers: [RealArticle]
     let savedAt: Date
 }
 
 @MainActor
-final class SportsStore: ObservableObject {
-    @Published var matches: [LiveMatch] = []
+final class EditorialStore: ObservableObject {
     @Published var news: [RealArticle] = []
     @Published var transfers: [RealArticle] = []
     @Published var isLoading = false
     @Published var errorMessage: String?
     @Published var lastUpdated: Date?
-    @Published var liveAlert: String?
 
-    static let shared = SportsStore()
-    private let cacheKey = "ninetyplus.sports.cache.v3"
+    static let shared = EditorialStore()
+    private let cacheKey = "ninetyplus.editorial.cache.v1"
 
-    private init() {
-        loadCache()
-    }
+    private init() { loadCache() }
 
     func refresh() async {
         guard !isLoading else { return }
         isLoading = true
         errorMessage = nil
+        defer { isLoading = false }
 
-        async let m = fetchMatches(date: Date())
         async let n = fetchRSS(query: "كرة القدم السعودية OR دوري روشن OR الهلال OR النصر OR الاتحاد OR الأهلي")
         async let t = fetchRSS(query: "انتقالات الدوري السعودي OR Saudi Pro League transfers OR football transfers")
-        let result = await (try? m, try? n, try? t)
+        let result = await (try? n, try? t)
 
         var changed = false
-        if let newMatches = result.0 {
-            detectFollowedMatchChanges(old: matches, new: newMatches)
-            matches = newMatches
-            changed = true
-        }
-        if let newNews = result.1, !newNews.isEmpty {
+        if let newNews = result.0, !newNews.isEmpty {
             news = dedupe(newNews)
             changed = true
         }
-        if let newTransfers = result.2, !newTransfers.isEmpty {
+        if let newTransfers = result.1, !newTransfers.isEmpty {
             transfers = dedupe(newTransfers)
             changed = true
         }
@@ -84,104 +60,10 @@ final class SportsStore: ObservableObject {
             lastUpdated = Date()
             saveCache()
         } else {
-            errorMessage = matches.isEmpty && news.isEmpty
-                ? "تعذر الاتصال بمصادر البيانات الآن"
+            errorMessage = news.isEmpty && transfers.isEmpty
+                ? "تعذر الاتصال بمصادر الأخبار الآن"
                 : "تعذر تحديث بعض المصادر، يتم عرض آخر بيانات محفوظة"
         }
-        isLoading = false
-    }
-
-    func matches(on date: Date) async throws -> [LiveMatch] {
-        let fresh = try await fetchMatches(date: date)
-        if Calendar.current.isDateInToday(date) {
-            detectFollowedMatchChanges(old: matches, new: fresh)
-        }
-        return fresh
-    }
-
-    func clearLiveAlert() {
-        liveAlert = nil
-    }
-
-    private func detectFollowedMatchChanges(old: [LiveMatch], new: [LiveMatch]) {
-        let followed = Set(UserDefaults.standard.string(forKey: "followedMatchIDs")?.split(separator: ",").map(String.init) ?? [])
-        guard !followed.isEmpty, !old.isEmpty else { return }
-        let oldMap = Dictionary(uniqueKeysWithValues: old.map { ($0.id, $0) })
-
-        for match in new where followed.contains(match.id) {
-            guard let previous = oldMap[match.id] else { continue }
-            let before = "\(previous.homeScore ?? "-"):\(previous.awayScore ?? "-")"
-            let after = "\(match.homeScore ?? "-"):\(match.awayScore ?? "-")"
-
-            if before != after, match.homeScore != nil, match.awayScore != nil {
-                let text = "⚽️ \(match.home) \(match.homeScore ?? "-") - \(match.awayScore ?? "-") \(match.away)"
-                liveAlert = text
-                sendLocalMatchNotification(title: "هدف أو تغير في النتيجة", body: text, matchID: match.id)
-                return
-            }
-
-            let oldStatus = previous.status.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
-            let newStatus = match.status.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
-            guard oldStatus != newStatus else { continue }
-
-            if isKickoffStatus(oldStatus: oldStatus, newStatus: newStatus) {
-                let text = "بدأت: \(match.home) ضد \(match.away)"
-                liveAlert = text
-                sendLocalMatchNotification(title: "بداية المباراة", body: text, matchID: match.id)
-                return
-            }
-
-            if ["FT", "AET", "PEN"].contains(newStatus) {
-                let text = "انتهت: \(match.home) \(match.homeScore ?? "-") - \(match.awayScore ?? "-") \(match.away)"
-                liveAlert = text
-                sendLocalMatchNotification(title: "نهاية المباراة", body: text, matchID: match.id)
-                return
-            }
-        }
-    }
-
-    private func isKickoffStatus(oldStatus: String, newStatus: String) -> Bool {
-        let wasPending = oldStatus.isEmpty || ["NS", "TBD", "PST"].contains(oldStatus)
-        return wasPending && APISportsStore.shared.isLive(newStatus)
-    }
-
-    private func sendLocalMatchNotification(title: String, body: String, matchID: String) {
-        guard UserDefaults.standard.bool(forKey: "notificationsEnabled") else { return }
-        let content = UNMutableNotificationContent()
-        content.title = title
-        content.body = body
-        content.sound = .default
-        content.userInfo = ["matchID": matchID]
-        let request = UNNotificationRequest(
-            identifier: "ninetyplus.match.\(matchID).\(Date().timeIntervalSince1970)",
-            content: content,
-            trigger: nil
-        )
-        UNUserNotificationCenter.current().add(request)
-    }
-
-    private func fetchMatches(date: Date) async throws -> [LiveMatch] {
-        guard APIFootballClient.isConfigured else { throw APIFootballError.missingConfiguration }
-        let fixtures = try await APISportsStore.shared.fixtures(date: date)
-        return fixtures.map { match in
-            LiveMatch(
-                id: match.id,
-                league: match.league,
-                home: match.home,
-                away: match.away,
-                homeBadge: match.homeLogo,
-                awayBadge: match.awayLogo,
-                homeScore: match.homeScore.map(String.init),
-                awayScore: match.awayScore.map(String.init),
-                time: displayTime(match.date),
-                status: match.status
-            )
-        }
-    }
-
-    private func displayTime(_ date: Date?) -> String {
-        guard let date else { return "—" }
-        return date.formatted(date: .omitted, time: .shortened)
     }
 
     private func fetchRSS(query: String) async throws -> [RealArticle] {
@@ -204,12 +86,13 @@ final class SportsStore: ObservableObject {
         var seen = Set<String>()
         return input.filter {
             let key = $0.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            return !key.isEmpty && seen.insert(key).inserted
+            return !key.isEmpty && $0.url != nil && seen.insert(key).inserted
         }
+        .sorted { $0.date > $1.date }
     }
 
     private func saveCache() {
-        let cache = SportsCache(matches: matches, news: news, transfers: transfers, savedAt: lastUpdated ?? Date())
+        let cache = EditorialCache(news: news, transfers: transfers, savedAt: lastUpdated ?? Date())
         if let data = try? JSONEncoder().encode(cache) {
             UserDefaults.standard.set(data, forKey: cacheKey)
         }
@@ -217,13 +100,15 @@ final class SportsStore: ObservableObject {
 
     private func loadCache() {
         guard let data = UserDefaults.standard.data(forKey: cacheKey),
-              let cache = try? JSONDecoder().decode(SportsCache.self, from: data) else { return }
-        matches = cache.matches
+              let cache = try? JSONDecoder().decode(EditorialCache.self, from: data) else { return }
         news = cache.news
         transfers = cache.transfers
         lastUpdated = cache.savedAt
     }
 }
+
+// Temporary source compatibility while legacy view names are being removed.
+typealias SportsStore = EditorialStore
 
 private final class RSSParser: NSObject, XMLParserDelegate {
     private let data: Data
@@ -235,9 +120,7 @@ private final class RSSParser: NSObject, XMLParserDelegate {
     private var source = ""
     private var insideItem = false
 
-    init(data: Data) {
-        self.data = data
-    }
+    init(data: Data) { self.data = data }
 
     func parse() -> [RealArticle] {
         let parser = XMLParser(data: data)
@@ -293,8 +176,7 @@ struct RemoteBadge: View {
     var body: some View {
         AsyncImage(url: url.flatMap(URL.init(string:))) { phase in
             switch phase {
-            case .success(let image):
-                image.resizable().scaledToFit()
+            case .success(let image): image.resizable().scaledToFit()
             default:
                 Image(systemName: "shield.fill")
                     .resizable()
