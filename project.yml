@@ -22,15 +22,19 @@ targets:
       base:
         PRODUCT_NAME: NinetyPlus
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
-        INFOPLIST_KEY_CFBundleDisplayName: '90+'
-        INFOPLIST_KEY_UIUserInterfaceStyle: Dark
-        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: UIInterfaceOrientationPortrait
     info:
       path: Sources/App/Info.plist
       properties:
+        CFBundleDisplayName: '90+'
+        CFBundleName: $(PRODUCT_NAME)
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         NINETYPLUS_BACKEND_URL: 'https://ninetyplus-ios-production.up.railway.app/'
         CFBundleDevelopmentRegion: ar
         CFBundleLocalizations: [ar, en]
+        UIUserInterfaceStyle: Dark
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
         UIRequiresFullScreen: true
         UILaunchScreen: {}
         UIApplicationSceneManifest:
