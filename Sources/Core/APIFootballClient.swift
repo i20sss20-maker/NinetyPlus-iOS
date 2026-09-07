@@ -13,8 +13,6 @@ enum APIFootballError: LocalizedError {
 }
 
 enum APIFootballClient {
-    private static let providerBaseURL = URL(string: "https://v3.football.api-sports.io")!
-    static let keyDefaultsName = "apiFootballKey"
     static let backendURLDefaultsName = "ninetyPlusBackendURL"
 
     static var currentSeason: Int {
@@ -24,38 +22,23 @@ enum APIFootballClient {
         return month >= 7 ? year : year - 1
     }
 
-    static var localKey: String {
-        (UserDefaults.standard.string(forKey: keyDefaultsName) ?? "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
     static var backendURL: URL? {
         if let configured = Bundle.main.object(forInfoDictionaryKey: "NINETYPLUS_BACKEND_URL") as? String,
            let url = normalizedBackendURL(configured) { return url }
         return normalizedBackendURL(UserDefaults.standard.string(forKey: backendURLDefaultsName) ?? "")
     }
 
-    static var hasKey: Bool { !localKey.isEmpty }
     static var hasBackend: Bool { backendURL != nil }
-    static var isConfigured: Bool { hasBackend || hasKey }
+    static var isConfigured: Bool { hasBackend }
 
     static func get<T: Decodable>(_ path: String, query: [URLQueryItem] = []) async throws -> T {
-        var request: URLRequest
+        guard let backendURL else { throw APIFootballError.missingConfiguration }
 
-        if let backendURL {
-            var components = URLComponents(url: backendURL.appending(path: "api/football"), resolvingAgainstBaseURL: false)!
-            components.queryItems = [URLQueryItem(name: "path", value: path)] + query
-            guard let url = components.url else { throw URLError(.badURL) }
-            request = URLRequest(url: url)
-        } else {
-            guard !localKey.isEmpty else { throw APIFootballError.missingConfiguration }
-            var components = URLComponents(url: providerBaseURL.appending(path: path), resolvingAgainstBaseURL: false)!
-            if !query.isEmpty { components.queryItems = query }
-            guard let url = components.url else { throw URLError(.badURL) }
-            request = URLRequest(url: url)
-            request.setValue(localKey, forHTTPHeaderField: "x-apisports-key")
-        }
+        var components = URLComponents(url: backendURL.appending(path: "api/football"), resolvingAgainstBaseURL: false)!
+        components.queryItems = [URLQueryItem(name: "path", value: path)] + query
+        guard let url = components.url else { throw URLError(.badURL) }
 
+        var request = URLRequest(url: url)
         request.timeoutInterval = 18
         request.cachePolicy = .useProtocolCachePolicy
         request.setValue("NinetyPlus/2.0 iOS", forHTTPHeaderField: "User-Agent")
