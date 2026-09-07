@@ -24,6 +24,8 @@ struct V2LeagueHubView: View {
     private var key: String { "\(league.apiFootballID):\(section):\(APIFootballClient.currentSeason)" }
     private var matches: [APIPlusMatch] { matchesState.value ?? [] }
     private var scorers: [APIPlusScorer] { scorersState.value ?? [] }
+    private var scorerSeason: Int { scorers.first?.season ?? APIFootballClient.currentSeason }
+    private var scorerSeasonIsFallback: Bool { scorers.first.map { $0.season != APIFootballClient.currentSeason } ?? false }
 
     var body: some View {
         ScrollView {
@@ -74,8 +76,12 @@ struct V2LeagueHubView: View {
     }
     private var scorersContent: some View {
         VStack(spacing: 12) {
-            Text("هدافو موسم \(String(APIFootballClient.currentSeason))")
+            Text("هدافو موسم \(SeasonCopy.label(scorerSeason))")
                 .font(.caption).foregroundStyle(AppTheme.muted)
+            if scorerSeasonIsFallback {
+                Text("المصدر لم يوفّر قائمة الموسم الحالي؛ نعرض آخر موسم متاح مع توضيح موسمه.")
+                    .font(.caption2).foregroundStyle(.orange).multilineTextAlignment(.center).padding(.horizontal, 20)
+            }
             feedback(scorersState)
             ForEach(scorers) { scorer in
                 NavigationLink { V2PlayerLookupView(playerID: scorer.playerID, fallbackName: scorer.name, photo: scorer.photo) } label: {
