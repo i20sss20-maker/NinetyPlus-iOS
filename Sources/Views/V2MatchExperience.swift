@@ -27,34 +27,29 @@ struct V2MatchesView: View {
     private struct LeagueGroup: Identifiable {
         let id: String
         let name: String
+        let logo: String?
         let items: [APIPlusMatch]
     }
+
     private var grouped: [LeagueGroup] {
         Dictionary(grouping: filtered, by: { $0.leagueID ?? $0.league })
-            .map { LeagueGroup(id: $0.key, name: $0.value.first?.league ?? "", items: $0.value) }
+            .map {
+                LeagueGroup(
+                    id: $0.key,
+                    name: SportsArabic.league($0.value.first?.league ?? ""),
+                    logo: $0.value.first?.leagueLogo,
+                    items: $0.value
+                )
+            }
             .sorted { $0.name == $1.name ? $0.id < $1.id : $0.name < $1.name }
     }
 
     var body: some View {
         NavigationStack {
             ScrollView {
-                LazyVStack(spacing: 12) {
-                    TopBar(title: "المباريات")
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 8) {
-                            ForEach(days, id: \.self) { day in
-                                Button { selectedDate = day } label: {
-                                    VStack(spacing: 3) {
-                                        Text(Calendar.current.isDateInToday(day) ? "اليوم" : day.formatted(.dateTime.weekday(.abbreviated))).font(.caption)
-                                        Text(day.formatted(.dateTime.day())).bold()
-                                    }
-                                    .frame(width: 62).padding(.vertical, 8)
-                                    .background(Calendar.current.isDate(day, inSameDayAs: selectedDate) ? AppTheme.green : AppTheme.card, in: RoundedRectangle(cornerRadius: 14))
-                                    .foregroundStyle(Calendar.current.isDate(day, inSameDayAs: selectedDate) ? .black : .white)
-                                }
-                            }
-                        }.padding(.horizontal, 16)
-                    }
+                LazyVStack(spacing: 13) {
+                    TopBar(title: "المباريات", subtitle: "النتائج والمواعيد بتوقيت الرياض")
+                    dayPicker
                     SegmentBar(items: ["الكل", "مباشر", "القادمة", "المنتهية"], selected: $filter)
                     PageLoadFeedback(
                         loading: resource.isLoading || resource.key != dayKey,
@@ -70,12 +65,9 @@ struct V2MatchesView: View {
                             description: Text("غيّر اليوم أو الفلتر، أو اسحب الصفحة للتحديث.")
                         )
                     }
+
                     ForEach(grouped) { group in
-                        HStack {
-                            Text(group.name).font(.headline)
-                            Spacer()
-                            Text("\(group.items.count)").foregroundStyle(AppTheme.muted)
-                        }.padding(.horizontal, 16)
+                        leagueHeader(group)
                         ForEach(group.items) { match in
                             NavigationLink { V2MatchCenterView(match: match) } label: {
                                 APICompactMatchCard(match: match)
@@ -88,7 +80,6 @@ struct V2MatchesView: View {
             .task(id: "\(dayKey)|\(retryID)") { await load(force: retryID > 0) }
             .refreshable { await load(force: true) }
             .onDisappear { resource.invalidate() }
-            // Reuse the app's existing foreground refresh instead of a second timer.
             .onReceive(store.$lastUpdated) { updatedAt in
                 guard let updatedAt, Calendar.current.isDateInToday(selectedDate),
                       resource.key == dayKey, !resource.isLoading else { return }
@@ -96,6 +87,49 @@ struct V2MatchesView: View {
                 resource.succeed(store.today, token: token, at: updatedAt)
             }
         }
+    }
+
+    private var dayPicker: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(days, id: \.self) { day in
+                    let selected = Calendar.current.isDate(day, inSameDayAs: selectedDate)
+                    Button { selectedDate = day } label: {
+                        VStack(spacing: 4) {
+                            Text(dayTitle(day)).font(.caption2.bold())
+                            Text(day.formatted(.dateTime.day())).font(.headline.bold())
+                            Text(day.formatted(.dateTime.month(.abbreviated))).font(.caption2)
+                        }
+                        .frame(width: 62)
+                        .padding(.vertical, 9)
+                        .background(selected ? AppTheme.green : AppTheme.cardRaised, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(selected ? Color.clear : AppTheme.border, lineWidth: 1))
+                        .foregroundStyle(selected ? .black : .white)
+                    }.buttonStyle(.plain)
+                }
+            }.padding(.horizontal, 16)
+        }
+    }
+
+    private func dayTitle(_ day: Date) -> String {
+        if Calendar.current.isDateInToday(day) { return "اليوم" }
+        if Calendar.current.isDateInYesterday(day) { return "أمس" }
+        if Calendar.current.isDateInTomorrow(day) { return "غدًا" }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "ar_SA")
+        formatter.dateFormat = "EEE"
+        return formatter.string(from: day)
+    }
+
+    private func leagueHeader(_ group: LeagueGroup) -> some View {
+        HStack(spacing: 9) {
+            if let logo = group.logo { RemoteBadge(url: logo).frame(width: 30, height: 30) }
+            Text(group.name).font(.headline).foregroundStyle(.white).lineLimit(1)
+            Spacer()
+            Text("\(group.items.count) مباراة").font(.caption).foregroundStyle(AppTheme.muted)
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 6)
     }
 
     @MainActor private func load(force: Bool = false) async {
@@ -144,7 +178,6 @@ final class V2MatchCenterStore: ObservableObject {
         prepare(match)
         let lackedTeamIDs = current?.homeID == nil || current?.awayID == nil
         await fetchSections(MatchDataSection.allCases, match: match, force: force)
-        // The fixture response may supply team IDs absent from the entry card.
         if lackedTeamIDs, !Task.isCancelled, progress.matchID == match.id,
            progress.state(.h2h).value == nil, current?.homeID != nil, current?.awayID != nil {
             await loadSection(.h2h, match: match)
@@ -192,7 +225,6 @@ final class V2MatchCenterStore: ObservableObject {
                 guard progress.succeed(.fixture, token: token, hasContent: true) else { return }
                 current = updated
                 lastObserved = updated
-                // Initial loads and long gaps do not generate catch-up goal alerts.
                 if let previousTime, Date().timeIntervalSince(previousTime) < 120 {
                     notifyIfNeeded(previous: previous, updated: updated)
                 }
@@ -247,9 +279,9 @@ final class V2MatchCenterStore: ObservableObject {
         case .scoreChanged: title = "تغيرت النتيجة"
         case .finished: title = "انتهت المباراة"
         }
-        var body = "\(updated.home) ضد \(updated.away)"
+        var body = "\(SportsArabic.team(updated.home)) ضد \(SportsArabic.team(updated.away))"
         if let home = updated.homeScore, let away = updated.awayScore {
-            body = "\(updated.home) \(home) - \(away) \(updated.away)"
+            body = "\(SportsArabic.team(updated.home)) \(home) - \(away) \(SportsArabic.team(updated.away))"
         }
         let content = UNMutableNotificationContent()
         content.title = title; content.body = body; content.sound = .default
@@ -276,6 +308,7 @@ struct V2MatchCenterView: View {
     private var isFollowed: Bool { SavedFavoriteIDs.parse(followedMatchIDs).contains(match.id) }
     private var isActive: Bool { visible && scenePhase == .active }
     private var lifecycleKey: String { "\(match.id):\(isActive)" }
+    private var isLive: Bool { MatchLivePolicy.isLive(displayMatch.status) }
     private var tabSections: [MatchDataSection] {
         switch tab {
         case "الأحداث": return [.events]
@@ -298,7 +331,8 @@ struct V2MatchCenterView: View {
             }.padding(.vertical, 12)
         }
         .background(AppTheme.bg.ignoresSafeArea())
-        .navigationTitle("مركز المباراة").navigationBarTitleDisplayMode(.inline)
+        .navigationTitle("مركز المباراة")
+        .navigationBarTitleDisplayMode(.inline)
         .onAppear { visible = true }
         .onDisappear { visible = false; store.cancelPending() }
         .task(id: lifecycleKey) {
@@ -328,40 +362,86 @@ struct V2MatchCenterView: View {
 
     private var header: some View {
         let m = displayMatch
-        return VStack(spacing: 14) {
-            HStack {
-                Text(m.league).font(.caption).foregroundStyle(AppTheme.muted)
-                Spacer()
-                Text(MatchLivePolicy.statusText(m.status, elapsed: m.elapsed)).font(.caption.bold()).foregroundStyle(AppTheme.green)
-            }
-            HStack {
-                team(m.home, m.homeLogo); Spacer()
-                VStack(spacing: 5) {
-                    if !FixturePhase.isUpcoming(m.status), let h = m.homeScore, let a = m.awayScore {
-                        Text("\(h) - \(a)").font(.system(size: 34, weight: .black, design: .rounded)).monospacedDigit()
-                    } else if let date = m.date { Text(date, style: .time).font(.title2.bold()) }
-                    else { Text("—").font(.title2.bold()) }
+        return ZStack {
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .fill(LinearGradient(colors: [AppTheme.cardRaised, isLive ? AppTheme.greenDeep.opacity(0.72) : AppTheme.greenDeep.opacity(0.34)], startPoint: .topTrailing, endPoint: .bottomLeading))
+            Circle().fill(AppTheme.green.opacity(0.07)).frame(width: 230, height: 230).offset(x: 120, y: -95)
+            VStack(spacing: 17) {
+                HStack(spacing: 8) {
+                    if let logo = m.leagueLogo { RemoteBadge(url: logo).frame(width: 28, height: 28) }
+                    Text(SportsArabic.league(m.league)).font(.caption.bold()).foregroundStyle(.white.opacity(0.84)).lineLimit(1)
+                    Spacer()
+                    statusPill(m)
                 }
-                Spacer(); team(m.away, m.awayLogo)
+
+                HStack(alignment: .center, spacing: 8) {
+                    team(m.home, m.homeLogo)
+                    Spacer(minLength: 4)
+                    scoreCenter(m)
+                    Spacer(minLength: 4)
+                    team(m.away, m.awayLogo)
+                }
+
+                if let date = m.date {
+                    HStack(spacing: 7) {
+                        Image(systemName: "calendar")
+                        Text(date.formatted(date: .abbreviated, time: .shortened))
+                    }
+                    .font(.caption)
+                    .foregroundStyle(AppTheme.muted)
+                }
             }
+            .padding(18)
         }
-        .foregroundStyle(.white).padding(18)
-        .background(LinearGradient(colors: [AppTheme.card, AppTheme.green.opacity(0.10)], startPoint: .top, endPoint: .bottom), in: RoundedRectangle(cornerRadius: 24))
+        .overlay(RoundedRectangle(cornerRadius: 28, style: .continuous).stroke(isLive ? AppTheme.green.opacity(0.25) : AppTheme.border, lineWidth: 1))
         .padding(.horizontal, 16)
+    }
+
+    private func statusPill(_ m: APIPlusMatch) -> some View {
+        HStack(spacing: 6) {
+            if isLive { Circle().fill(AppTheme.green).frame(width: 7, height: 7) }
+            Text(MatchLivePolicy.statusText(m.status, elapsed: m.elapsed)).font(.caption2.bold())
+        }
+        .foregroundStyle(isLive ? AppTheme.green : .white.opacity(0.75))
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(Color.black.opacity(0.20), in: Capsule())
+    }
+
+    private func scoreCenter(_ m: APIPlusMatch) -> some View {
+        VStack(spacing: 5) {
+            if !FixturePhase.isUpcoming(m.status), let h = m.homeScore, let a = m.awayScore {
+                Text("\(h) : \(a)")
+                    .font(.system(size: 38, weight: .black, design: .rounded))
+                    .monospacedDigit()
+            } else if let date = m.date {
+                Text(date, style: .time)
+                    .font(.system(size: 25, weight: .black, design: .rounded))
+                    .foregroundStyle(AppTheme.green)
+                    .monospacedDigit()
+            } else {
+                Text("—").font(.title2.bold())
+            }
+            if FixturePhase.isUpcoming(m.status) { Text("موعد المباراة").font(.caption2).foregroundStyle(AppTheme.muted) }
+        }
+        .frame(minWidth: 84)
     }
 
     private var followBar: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 10) {
                 Button { Task { await toggleFollow() } } label: {
-                    Label(isFollowed ? "تتم متابعة المباراة" : "متابعة المباراة", systemImage: isFollowed ? "bell.fill" : "bell")
-                        .font(.subheadline.bold()).foregroundStyle(isFollowed ? .black : .white)
-                        .padding(.horizontal, 14).padding(.vertical, 9)
-                        .background(isFollowed ? AppTheme.green : AppTheme.card, in: Capsule())
+                    Label(isFollowed ? "متابَع" : "تابع المباراة", systemImage: isFollowed ? "bell.fill" : "bell")
+                        .font(.subheadline.bold())
+                        .foregroundStyle(isFollowed ? .black : .white)
+                        .padding(.horizontal, 15).padding(.vertical, 10)
+                        .background(isFollowed ? AppTheme.green : AppTheme.cardRaised, in: Capsule())
+                        .overlay(Capsule().stroke(isFollowed ? Color.clear : AppTheme.border, lineWidth: 1))
                 }.buttonStyle(.plain).disabled(followBusy)
                 Spacer()
                 if let date = store.lastLiveUpdate {
-                    Text("آخر استلام للنتيجة \(date, style: .relative)").font(.caption2).foregroundStyle(AppTheme.muted)
+                    Label("تحديث \(date, style: .relative)", systemImage: "arrow.clockwise")
+                        .font(.caption2).foregroundStyle(AppTheme.muted)
                 }
             }
             if let permissionNotice { Text(permissionNotice).font(.caption).foregroundStyle(AppTheme.muted) }
@@ -397,12 +477,24 @@ struct V2MatchCenterView: View {
     private var overview: some View {
         let m = displayMatch
         return VStack(spacing: 12) {
-            infoRow("الحالة", MatchLivePolicy.statusText(m.status, elapsed: m.elapsed))
-            infoRow("البطولة", m.league)
-            if let date = m.date { infoRow("الموعد", date.formatted(date: .abbreviated, time: .shortened)) }
-            infoRow("الأحداث المتاحة", countText(.events, store.events.count))
-            infoRow("التشكيلات", countText(.lineups, store.lineups.count))
-            infoRow("مواجهات سابقة", countText(.h2h, store.h2h.count))
+            HStack(spacing: 10) {
+                miniMetric("الأحداث", countText(.events, store.events.count), "list.bullet.rectangle")
+                miniMetric("التشكيلات", countText(.lineups, store.lineups.count), "person.3.fill")
+                miniMetric("المواجهات", countText(.h2h, store.h2h.count), "arrow.left.arrow.right")
+            }
+            VStack(spacing: 0) {
+                infoRow("الحالة", MatchLivePolicy.statusText(m.status, elapsed: m.elapsed))
+                Divider().overlay(AppTheme.border)
+                infoRow("البطولة", SportsArabic.league(m.league))
+                if let date = m.date {
+                    Divider().overlay(AppTheme.border)
+                    infoRow("الموعد", date.formatted(date: .abbreviated, time: .shortened))
+                }
+            }
+            .padding(.horizontal, 15)
+            .background(AppTheme.cardRaised, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(AppTheme.border, lineWidth: 1))
+
             ForEach(store.progress.errors, id: \.0) { section, _ in
                 Button {
                     retrySection = section; retryID += 1
@@ -411,24 +503,52 @@ struct V2MatchCenterView: View {
                         .font(.caption.bold()).foregroundStyle(.orange)
                 }.disabled(store.progress.state(section).isLoading)
             }
-        }.padding(16).background(AppTheme.card, in: RoundedRectangle(cornerRadius: 18)).padding(.horizontal, 16)
+        }
+        .padding(.horizontal, 16)
+    }
+
+    private func miniMetric(_ title: String, _ value: String, _ icon: String) -> some View {
+        VStack(spacing: 7) {
+            Image(systemName: icon).foregroundStyle(AppTheme.green)
+            Text(value).font(.subheadline.bold()).lineLimit(1).minimumScaleFactor(0.7)
+            Text(title).font(.caption2).foregroundStyle(AppTheme.muted)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 14)
+        .background(AppTheme.card, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(AppTheme.border, lineWidth: 1))
     }
 
     private func countText(_ section: MatchDataSection, _ count: Int) -> String {
         let state = store.progress.state(section)
-        if state.value != nil { return state.errorMessage == nil ? "\(count)" : "\(count) • آخر بيانات محفوظة" }
-        return state.isLoading ? "جارٍ التحميل" : "غير متاح"
+        if state.value != nil { return state.errorMessage == nil ? "\(count)" : "\(count) محفوظ" }
+        return state.isLoading ? "…" : "—"
     }
 
     private var insightView: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Label("ملخص البيانات المتاحة", systemImage: "sparkles").font(.headline).foregroundStyle(AppTheme.green)
+            HStack {
+                BrandLogo(compact: true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("تحليل المباراة").font(.headline)
+                    Text("ملخص للبيانات المنشورة فعليًا").font(.caption2).foregroundStyle(AppTheme.muted)
+                }
+                Spacer()
+                Image(systemName: "sparkles").foregroundStyle(AppTheme.green)
+            }
             if !store.progress.errors.isEmpty {
-                Label("بعض الأقسام لم تتحدث. الملخص يستخدم آخر بيانات وصلت، وقد لا يعكس آخر تطورات المباراة.", systemImage: "info.circle")
+                Label("بعض الأقسام لم تتحدث؛ الملخص يعتمد على آخر بيانات وصلت.", systemImage: "info.circle")
                     .font(.caption).foregroundStyle(.orange)
             }
-            Text(MatchLivePolicy.summary(status: displayMatch.status, homeName: displayMatch.home, awayName: displayMatch.away, home: displayMatch.homeScore, away: displayMatch.awayScore))
-                .font(.body).foregroundStyle(.white).frame(maxWidth: .infinity, alignment: .leading)
+            Text(MatchLivePolicy.summary(
+                status: displayMatch.status,
+                homeName: SportsArabic.team(displayMatch.home),
+                awayName: SportsArabic.team(displayMatch.away),
+                home: displayMatch.homeScore,
+                away: displayMatch.awayScore
+            ))
+            .font(.body.weight(.medium)).foregroundStyle(.white).frame(maxWidth: .infinity, alignment: .leading)
+
             ForEach(keyFacts, id: \.self) { fact in
                 HStack(alignment: .top, spacing: 10) {
                     Image(systemName: "checkmark.circle.fill").foregroundStyle(AppTheme.green)
@@ -436,41 +556,95 @@ struct V2MatchCenterView: View {
                     Spacer(minLength: 0)
                 }
             }
-            Text("هذا ملخص آلي للبيانات المنشورة، وليس توقعًا للنتيجة. لا تُستبدل المعلومات الناقصة بأرقام تقديرية.")
+            Text("الملخص وصفي للبيانات المتوفرة وليس توقعًا أو رقمًا تقديريًا.")
                 .font(.caption).foregroundStyle(AppTheme.muted)
-        }.padding(16).background(AppTheme.card, in: RoundedRectangle(cornerRadius: 18)).padding(.horizontal, 16)
+        }
+        .padding(17)
+        .background(AppTheme.cardRaised, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(AppTheme.border, lineWidth: 1))
+        .padding(.horizontal, 16)
     }
 
     private var eventsView: some View {
         VStack(spacing: 0) {
             if store.events.isEmpty && store.progress.mayShowEmpty(.events) { unavailable("لا توجد أحداث منشورة") }
             ForEach(Array(store.events.enumerated()), id: \.offset) { _, event in
-                HStack {
+                HStack(alignment: .center, spacing: 12) {
                     Text(MatchLivePolicy.eventMinute(elapsed: event.time.elapsed, extra: event.time.extra))
-                        .foregroundStyle(AppTheme.green).frame(width: 60)
-                    VStack(alignment: .leading) {
-                        Text(event.player.name ?? event.team.name ?? "حدث").bold()
-                        Text(event.detail ?? event.type ?? "").font(.caption).foregroundStyle(AppTheme.muted)
+                        .font(.subheadline.bold()).foregroundStyle(AppTheme.green).frame(width: 52)
+                    ZStack {
+                        Circle().fill(AppTheme.green.opacity(0.10))
+                        Image(systemName: eventIcon(event.type)).font(.caption.bold()).foregroundStyle(AppTheme.green)
+                    }.frame(width: 34, height: 34)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(event.player.name ?? SportsArabic.team(event.team.name ?? "") )
+                            .font(.subheadline.bold()).foregroundStyle(.white)
+                        HStack(spacing: 5) {
+                            Text(SportsArabic.eventType(event.type))
+                            if let detail = event.detail, !detail.isEmpty { Text("•"); Text(detail) }
+                            if let team = event.team.name, !team.isEmpty { Text("•"); Text(SportsArabic.team(team)) }
+                        }
+                        .font(.caption).foregroundStyle(AppTheme.muted).lineLimit(2)
                     }
-                    Spacer()
-                }.padding(12)
-                Divider().overlay(Color.white.opacity(0.08))
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 14).padding(.vertical, 11)
+                Divider().overlay(AppTheme.border).padding(.leading, 62)
             }
-        }.background(AppTheme.card, in: RoundedRectangle(cornerRadius: 18)).padding(.horizontal, 16)
+        }
+        .background(AppTheme.cardRaised, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(AppTheme.border, lineWidth: 1))
+        .padding(.horizontal, 16)
+    }
+
+    private func eventIcon(_ type: String?) -> String {
+        switch type?.lowercased() {
+        case "goal": return "soccerball"
+        case "card": return "rectangle.fill"
+        case "subst": return "arrow.left.arrow.right"
+        case "var": return "video.fill"
+        default: return "circle.fill"
+        }
     }
 
     private var statsView: some View {
         VStack(spacing: 12) {
             if store.stats.isEmpty && store.progress.mayShowEmpty(.stats) { unavailable("الإحصائيات غير متاحة من المصدر") }
             ForEach(Array(store.stats.enumerated()), id: \.offset) { _, teamStats in
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(teamStats.team.name ?? "فريق").font(.headline).foregroundStyle(AppTheme.green)
-                    ForEach(Array(teamStats.statistics.enumerated()), id: \.offset) { _, stat in
-                        HStack { Text(stat.type ?? "—"); Spacer(); Text(statText(stat.value)).bold() }.font(.subheadline)
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(spacing: 9) {
+                        RemoteBadge(url: teamStats.team.logo).frame(width: 38, height: 38)
+                        Text(SportsArabic.team(teamStats.team.name ?? "فريق")).font(.headline).foregroundStyle(.white)
+                        Spacer()
                     }
-                }.padding(14).background(AppTheme.card, in: RoundedRectangle(cornerRadius: 18))
+                    ForEach(Array(teamStats.statistics.enumerated()), id: \.offset) { _, stat in
+                        HStack(spacing: 12) {
+                            Text(statTitle(stat.type)).foregroundStyle(AppTheme.muted)
+                            Spacer()
+                            Text(statText(stat.value)).fontWeight(.bold).monospacedDigit()
+                        }.font(.subheadline)
+                    }
+                }
+                .padding(15)
+                .background(AppTheme.cardRaised, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(AppTheme.border, lineWidth: 1))
             }
         }.padding(.horizontal, 16)
+    }
+
+    private func statTitle(_ value: String?) -> String {
+        let map: [String: String] = [
+            "Shots on Goal": "تسديدات على المرمى", "Shots off Goal": "تسديدات خارج المرمى",
+            "Total Shots": "إجمالي التسديدات", "Blocked Shots": "تسديدات محجوبة",
+            "Shots insidebox": "تسديدات داخل المنطقة", "Shots outsidebox": "تسديدات خارج المنطقة",
+            "Fouls": "الأخطاء", "Corner Kicks": "الركنيات", "Offsides": "التسلل",
+            "Ball Possession": "الاستحواذ", "Yellow Cards": "بطاقات صفراء", "Red Cards": "بطاقات حمراء",
+            "Goalkeeper Saves": "تصديات الحارس", "Total passes": "إجمالي التمريرات",
+            "Passes accurate": "تمريرات صحيحة", "Passes %": "دقة التمرير",
+            "expected_goals": "الأهداف المتوقعة xG"
+        ]
+        guard let value else { return "—" }
+        return map[value] ?? value
     }
 
     private func statText(_ value: APIStatValue?) -> String {
@@ -483,23 +657,54 @@ struct V2MatchCenterView: View {
         VStack(spacing: 12) {
             if store.lineups.isEmpty && store.progress.mayShowEmpty(.lineups) { unavailable("التشكيلة غير منشورة حاليًا") }
             ForEach(Array(store.lineups.enumerated()), id: \.offset) { _, lineup in
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("\(lineup.team.name ?? "فريق") • \(lineup.formation ?? "—")").font(.headline).foregroundStyle(AppTheme.green)
-                    ForEach(Array((lineup.startXI ?? []).enumerated()), id: \.offset) { _, slot in
-                        HStack {
-                            Text(slot.player.number.map(String.init) ?? "—").frame(width: 28)
-                            Text(slot.player.name ?? "لاعب"); Spacer()
-                            Text(slot.player.pos ?? "").foregroundStyle(AppTheme.muted)
-                        }.font(.subheadline)
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        RemoteBadge(url: lineup.team.logo).frame(width: 40, height: 40)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(SportsArabic.team(lineup.team.name ?? "فريق")).font(.headline)
+                            Text("الخطة \(lineup.formation ?? "—")").font(.caption).foregroundStyle(AppTheme.green)
+                        }
+                        Spacer()
                     }
-                }.padding(14).background(AppTheme.card, in: RoundedRectangle(cornerRadius: 18))
+                    ForEach(Array((lineup.startXI ?? []).enumerated()), id: \.offset) { _, slot in
+                        HStack(spacing: 10) {
+                            Text(slot.player.number.map(String.init) ?? "—")
+                                .font(.caption.bold()).foregroundStyle(AppTheme.green)
+                                .frame(width: 30, height: 30)
+                                .background(AppTheme.green.opacity(0.10), in: Circle())
+                            Text(slot.player.name ?? "لاعب").font(.subheadline.weight(.medium))
+                            Spacer()
+                            Text(positionText(slot.player.pos)).font(.caption).foregroundStyle(AppTheme.muted)
+                        }
+                    }
+                }
+                .padding(15)
+                .background(AppTheme.cardRaised, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(AppTheme.border, lineWidth: 1))
             }
         }.padding(.horizontal, 16)
+    }
+
+    private func positionText(_ value: String?) -> String {
+        switch value?.uppercased() {
+        case "G": return "حارس"
+        case "D": return "دفاع"
+        case "M": return "وسط"
+        case "F": return "هجوم"
+        default: return value ?? ""
+        }
     }
 
     private var h2hView: some View {
         VStack(spacing: 10) {
             if store.h2h.isEmpty && store.progress.mayShowEmpty(.h2h) { unavailable("لا توجد مواجهات سابقة متاحة من المصدر") }
+            if !store.h2h.isEmpty {
+                HStack {
+                    Text("آخر المواجهات").font(.headline)
+                    Spacer()
+                    Text("\(store.h2h.count)").font(.caption.bold()).foregroundStyle(AppTheme.green)
+                }.padding(.horizontal, 16)
+            }
             ForEach(store.h2h) { APICompactMatchCard(match: $0) }
         }
     }
@@ -508,11 +713,12 @@ struct V2MatchCenterView: View {
         var facts: [String] = []
         let goals = store.events.filter { ($0.type ?? "").lowercased().contains("goal") }
         let cards = store.events.filter { ($0.type ?? "").lowercased().contains("card") }
-        if !goals.isEmpty { facts.append("عدد أحداث الأهداف المنشورة: \(goals.count).") }
-        if !cards.isEmpty { facts.append("عدد أحداث البطاقات المنشورة: \(cards.count).") }
+        if !goals.isEmpty { facts.append("أحداث الأهداف المنشورة: \(goals.count).") }
+        if !cards.isEmpty { facts.append("أحداث البطاقات المنشورة: \(cards.count).") }
         if store.lineups.count == 2 { facts.append("تشكيلة الفريقين متوفرة من المصدر.") }
-        if !store.stats.isEmpty { facts.append("إحصائيات المباراة متوفرة لـ \(store.stats.count) فريق/طرف.") }
-        if !store.h2h.isEmpty { facts.append("متوفر \(store.h2h.count) من المواجهات السابقة بين الفريقين.") }
+        if !store.stats.isEmpty { facts.append("إحصائيات المباراة متوفرة للطرفين المنشورين.") }
+        if !store.h2h.isEmpty { facts.append("متوفر \(store.h2h.count) من المواجهات السابقة.") }
+        if facts.isEmpty { facts.append("سيظهر التحليل التفصيلي عندما ينشر المصدر أحداثًا أو إحصائيات للمباراة.") }
         return facts
     }
 
@@ -537,7 +743,34 @@ struct V2MatchCenterView: View {
         followedMatchIDs = ids.sorted().joined(separator: ",")
     }
 
-    private func team(_ name: String, _ logo: String?) -> some View { VStack(spacing: 7) { RemoteBadge(url: logo).frame(width: 68, height: 68); Text(name).font(.subheadline.bold()).multilineTextAlignment(.center).lineLimit(2).frame(width: 105) } }
-    private func infoRow(_ title: String, _ value: String) -> some View { HStack { Text(title).foregroundStyle(AppTheme.muted); Spacer(); Text(value).bold() } }
-    private func unavailable(_ text: String) -> some View { Text(text).foregroundStyle(AppTheme.muted).frame(maxWidth: .infinity).padding(30) }
+    private func team(_ name: String, _ logo: String?) -> some View {
+        VStack(spacing: 8) {
+            RemoteBadge(url: logo).frame(width: 72, height: 72)
+            Text(SportsArabic.team(name))
+                .font(.subheadline.bold())
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+                .minimumScaleFactor(0.72)
+                .frame(width: 108)
+        }
+    }
+
+    private func infoRow(_ title: String, _ value: String) -> some View {
+        HStack(spacing: 12) {
+            Text(title).foregroundStyle(AppTheme.muted)
+            Spacer()
+            Text(value).fontWeight(.semibold).multilineTextAlignment(.trailing)
+        }
+        .font(.subheadline)
+        .padding(.vertical, 13)
+    }
+
+    private func unavailable(_ text: String) -> some View {
+        VStack(spacing: 10) {
+            Image(systemName: "info.circle").font(.title2).foregroundStyle(AppTheme.green)
+            Text(text).font(.subheadline).foregroundStyle(AppTheme.muted).multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(28)
+    }
 }
