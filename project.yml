@@ -1,3 +1,4 @@
+# Release data contract: canonical backend v0.8.6 passed production match-detail QA.
 name: NinetyPlus
 options:
   bundleIdPrefix: com.ninetyplus
