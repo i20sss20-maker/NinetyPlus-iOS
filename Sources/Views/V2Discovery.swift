@@ -50,7 +50,7 @@ struct V2DiscoverView: View {
 
     @MainActor private func search() async {
         let text = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard text.count >= 2, APIFootballClient.hasKey else { return }
+        guard text.count >= 2, APIFootballClient.isConfigured else { return }
         searched = true; loading = true; defer { loading = false }
         async let t = try? APISportsStore.shared.searchTeams(text)
         async let p = try? APISportsStore.shared.searchPlayers(text)
