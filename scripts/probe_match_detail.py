@@ -1,4 +1,5 @@
 import json
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urlencode
@@ -7,6 +8,7 @@ from urllib.request import Request, urlopen
 BASE = "https://ninetyplus-ios-production.up.railway.app"
 OUT = Path("evidence/production-match-detail.json")
 OUT.parent.mkdir(parents=True, exist_ok=True)
+MAX_DETAIL_SECONDS = 6.0
 
 
 def save(report):
@@ -22,7 +24,7 @@ def fail(report, message):
 
 def get_json(path, params=None, timeout=20):
     query = ("?" + urlencode(params)) if params else ""
-    req = Request(BASE + path + query, headers={"User-Agent": "NinetyPlus-QA/1.5"})
+    req = Request(BASE + path + query, headers={"User-Agent": "NinetyPlus-QA/1.6"})
     with urlopen(req, timeout=timeout) as response:
         return response.status, json.load(response)
 
@@ -95,7 +97,9 @@ if not match_id or not str(match_id).startswith("np:"):
     report["selected"] = selected
     fail(report, "Selected fixture had no canonical id")
 
+started = time.monotonic()
 status, detail = get_json("/api/v2/match", {"id": str(match_id), "date": selected_date})
+detail_seconds = round(time.monotonic() - started, 3)
 if status != 200 or not isinstance(detail, dict): fail(report, f"detail failed with {status}")
 if (detail.get("match") or {}).get("canonicalId") != match_id: fail(report, "detail returned a different canonical match")
 
@@ -114,13 +118,14 @@ report.update({"selectedDate": selected_date,
     "selectedMatch": {"id": match_id, "home": team_name(selected, "home"), "away": team_name(selected, "away"),
                       "status": status_code(selected), "sources": selected.get("sources") or [], "providerIds": selected.get("providerIds") or {},
                       "league": selected.get("league")},
-    "detailStatus": status,
+    "detailStatus": status, "detailSeconds": detail_seconds, "maxDetailSeconds": MAX_DETAIL_SECONDS,
     "detail": {"events": len(detail.get("events") or []), "statistics": len(detail.get("statistics") or []), "lineups": len(lineups),
                "lineupQuality": lineup_summaries, "coachCoverage": sum(1 for x in lineup_summaries if x["coach"]),
                "statisticsQuality": stat_summaries, "venue": venue, "officials": officials,
                "coverage": detail.get("coverage") or {}, "source": detail.get("source"), "meta": detail.get("meta") or {}}})
 save(report)
 
+if detail_seconds > MAX_DETAIL_SECONDS: fail(report, f"match detail too slow: {detail_seconds}s > {MAX_DETAIL_SECONDS}s")
 if len(lineup_summaries) < 2: fail(report, "both team lineups are required")
 if any(x["starters"] < 11 or x["namedPlayers"] < 11 for x in lineup_summaries): fail(report, "incomplete starting lineups")
 if any(x["substitutes"] < 1 for x in lineup_summaries): fail(report, "substitutes missing")
