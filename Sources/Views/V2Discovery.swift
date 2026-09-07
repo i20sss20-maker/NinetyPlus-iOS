@@ -6,6 +6,7 @@ struct V2DiscoverView: View {
     @State private var players: [APIPlusPlayer] = []
     @State private var loading = false
     @State private var searched = false
+    @State private var searchError: String?
     @State private var searchTask: Task<Void, Never>?
     @State private var searchGeneration = 0
 
@@ -16,6 +17,9 @@ struct V2DiscoverView: View {
                     TopBar(title: "البحث")
                     if query.isEmpty && !searched { intro }
                     if loading { ProgressView().tint(AppTheme.green).padding(.top, 34) }
+                    if let searchError, !loading {
+                        errorCard(searchError)
+                    }
                     if !teams.isEmpty {
                         section("الأندية", count: teams.count)
                         ForEach(teams) { team in NavigationLink { V2TeamView(team: team) } label: { teamRow(team) }.buttonStyle(.plain) }
@@ -24,7 +28,7 @@ struct V2DiscoverView: View {
                         section("اللاعبون", count: players.count)
                         ForEach(players) { player in NavigationLink { V2PlayerView(player: player) } label: { playerRow(player) }.buttonStyle(.plain) }
                     }
-                    if searched && !loading && teams.isEmpty && players.isEmpty {
+                    if searched && !loading && searchError == nil && teams.isEmpty && players.isEmpty {
                         ContentUnavailableView("لا توجد نتائج", systemImage: "magnifyingglass", description: Text("جرّب كتابة الاسم بالإنجليزية أو جزءًا من الاسم")).padding(.top, 50)
                     }
                 }.padding(.bottom, 30)
@@ -52,12 +56,29 @@ struct V2DiscoverView: View {
         }
     }
 
+    private func errorCard(_ message: String) -> some View {
+        VStack(spacing: 12) {
+            Image(systemName: "wifi.exclamationmark").font(.system(size: 34)).foregroundStyle(.orange)
+            Text("تعذر إكمال البحث").font(.headline)
+            Text(message).font(.caption).foregroundStyle(AppTheme.muted).multilineTextAlignment(.center)
+            Button { Task { await search(query) } } label: {
+                Label("إعادة المحاولة", systemImage: "arrow.clockwise")
+                    .font(.subheadline.bold()).foregroundStyle(.black)
+                    .padding(.horizontal, 16).padding(.vertical, 9)
+                    .background(AppTheme.green, in: Capsule())
+            }
+        }
+        .frame(maxWidth: .infinity).padding(20)
+        .background(AppTheme.card, in: RoundedRectangle(cornerRadius: 18))
+        .padding(.horizontal, 16)
+    }
+
     private func scheduleSearch(_ value: String) {
         searchTask?.cancel()
         let text = value.trimmingCharacters(in: .whitespacesAndNewlines)
         if text.count < 2 {
             searchGeneration += 1
-            searched = false; loading = false; teams = []; players = []
+            searched = false; loading = false; searchError = nil; teams = []; players = []
             return
         }
         searchTask = Task {
@@ -69,15 +90,25 @@ struct V2DiscoverView: View {
 
     @MainActor private func search(_ raw: String) async {
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard text.count >= 2, APIFootballClient.isConfigured else { return }
+        guard text.count >= 2 else { return }
+        guard APIFootballClient.isConfigured else {
+            searched = true; searchError = "خدمة البيانات غير متاحة حاليًا"; teams = []; players = []
+            return
+        }
         searchGeneration += 1
         let generation = searchGeneration
-        searched = true; loading = true
-        async let t = try? APISportsStore.shared.searchTeams(text)
-        async let p = try? APISportsStore.shared.searchPlayers(text)
-        let result = await (t, p)
-        guard generation == searchGeneration, text == query.trimmingCharacters(in: .whitespacesAndNewlines) else { return }
-        teams = result.0 ?? []; players = result.1 ?? []; loading = false
+        searched = true; loading = true; searchError = nil
+        do {
+            async let t = APISportsStore.shared.searchTeams(text)
+            async let p = APISportsStore.shared.searchPlayers(text)
+            let result = try await (t, p)
+            guard generation == searchGeneration, text == query.trimmingCharacters(in: .whitespacesAndNewlines) else { return }
+            teams = result.0; players = result.1; loading = false
+        } catch {
+            guard generation == searchGeneration, text == query.trimmingCharacters(in: .whitespacesAndNewlines) else { return }
+            teams = []; players = []; loading = false
+            searchError = error.localizedDescription
+        }
     }
 
     private func section(_ title: String, count: Int) -> some View { HStack { Text(title).font(.title3.bold()); Spacer(); Text("\(count)").font(.caption).foregroundStyle(AppTheme.muted) }.padding(.horizontal, 16) }
