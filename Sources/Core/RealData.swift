@@ -38,13 +38,6 @@ final class EditorialStore: ObservableObject {
 
     private init() { loadCache() }
 
-    func refreshIfStale(maxAge: TimeInterval) async {
-        if let lastUpdated, !news.isEmpty || !transfers.isEmpty,
-           Date().timeIntervalSince(lastUpdated) >= 0,
-           Date().timeIntervalSince(lastUpdated) < maxAge { return }
-        await refresh()
-    }
-
     func refresh() async {
         guard !isLoading else { return }
         isLoading = true
