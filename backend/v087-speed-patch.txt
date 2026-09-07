@@ -1,0 +1,64 @@
+// v0.8.7 — keep complete lineup metadata, but never hold the match center for
+// sequential 8–10 second coach probes. Probe independent public sources in
+// parallel, cache misses briefly, and return the first verified coach found.
+function replaceFunctionBlock(startMarker,endMarker,replacement,label) {
+  const start=s.indexOf(startMarker);
+  const end=start>=0 ? s.indexOf(endMarker,start) : -1;
+  if (start<0 || end<0) throw new Error(`v0.8.7 patch missing: ${label}`);
+  s=s.slice(0,start)+replacement+'\n'+s.slice(end);
+}
+
+replaceFunctionBlock(
+  'async function espnTeamCoach(',
+  'function splSlugForTeam',
+`async function espnTeamCoach(leagueCode,teamId) {
+  if (!leagueCode || !teamId) return null;
+  const cacheKey=\`espn:coach:v3:\${leagueCode}:\${teamId}\`;
+  const cached=getCached(cacheKey); if (cached) { try { return JSON.parse(cached.body); } catch {} }
+  const headers={accept:'application/json','user-agent':'NinetyPlus-Backend/0.8.7'};
+  const year=new Date().getUTCFullYear();
+  const core='https://sports.core.api.espn.com/v2/sports/soccer/leagues';
+  const urls=[
+    \`\${core}/\${encodeURIComponent(leagueCode)}/seasons/\${year}/teams/\${encodeURIComponent(teamId)}/coaches?limit=20&lang=en&region=us\`,
+    \`\${core}/\${encodeURIComponent(leagueCode)}/seasons/\${year-1}/teams/\${encodeURIComponent(teamId)}/coaches?limit=20&lang=en&region=us\`,
+    \`\${ESPN_SITE}/\${encodeURIComponent(leagueCode)}/teams/\${encodeURIComponent(teamId)}/roster\`,
+    \`\${ESPN_SITE}/\${encodeURIComponent(leagueCode)}/teams/\${encodeURIComponent(teamId)}\`
+  ];
+  const probes=await Promise.all(urls.map(async url=>{
+    try {
+      const response=await fetchWithTimeout(url,{headers},2800); if (!response.ok) return null;
+      const payload=await response.json();
+      return coachCandidateFromRoster(payload) || normalizeESPNCoach(payload) || null;
+    } catch { return null; }
+  }));
+  const coach=probes.find(Boolean) || null;
+  putCache(cacheKey,{status:200,ok:true,body:JSON.stringify(coach)},coach ? 21600 : 900);
+  return coach;
+}`,
+  'parallel ESPN coach lookup'
+);
+
+replaceFunctionBlock(
+  'async function splTeamCoach(',
+  'async function espnMatchDetail',
+`async function splTeamCoach(teamName) {
+  const slug=splSlugForTeam(teamName); if (!slug) return null;
+  const cacheKey=\`spl:coach:v2:\${slug}\`;
+  const cached=getCached(cacheKey); if (cached) { try { return JSON.parse(cached.body); } catch {} }
+  const urls=[\`https://www.spl.com.sa/en/teams/\${encodeURIComponent(slug)}\`,\`https://www.spl.com.sa/en/teams/\${encodeURIComponent(slug)}/index\`];
+  const probes=await Promise.all(urls.map(async url=>{
+    try {
+      const response=await fetchWithTimeout(url,{headers:{accept:'text/html,application/xhtml+xml','user-agent':'Mozilla/5.0 NinetyPlus/0.8.7'}},2800);
+      if (!response.ok) return null;
+      return coachFromSPLText(htmlText(await response.text()));
+    } catch { return null; }
+  }));
+  const coach=probes.find(Boolean) || null;
+  putCache(cacheKey,{status:200,ok:true,body:JSON.stringify(coach)},coach ? 10800 : 900);
+  return coach;
+}`,
+  'parallel SPL coach lookup'
+);
+
+s = s.replaceAll("version:'0.8.6'", "version:'0.8.7'");
+s = s.replaceAll('90+ backend v0.8.6 listening', '90+ backend v0.8.7 listening');
