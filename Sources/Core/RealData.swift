@@ -208,17 +208,27 @@ struct RemoteBadge: View {
         return parsed
     }
 
+    private var isPlayerPhoto: Bool {
+        let raw = url?.lowercased() ?? ""
+        return raw.contains("/players/") || raw.contains("player") && !raw.contains("teams")
+    }
+
+    private var isLeagueLogo: Bool { (url?.lowercased() ?? "").contains("/leagues/") }
+
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color.white.opacity(0.055))
+            background
             if let imageURL {
                 AsyncImage(url: imageURL, transaction: Transaction(animation: .easeInOut(duration: 0.2))) { phase in
                     switch phase {
                     case .empty:
                         ProgressView().tint(AppTheme.green).scaleEffect(0.7)
                     case .success(let image):
-                        image.resizable().scaledToFit().padding(4)
+                        if isPlayerPhoto {
+                            image.resizable().scaledToFill()
+                        } else {
+                            image.resizable().scaledToFit().padding(isLeagueLogo ? 5 : 4)
+                        }
                     case .failure:
                         fallback
                     @unknown default:
@@ -229,16 +239,30 @@ struct RemoteBadge: View {
                 fallback
             }
         }
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(AppTheme.border, lineWidth: 1))
-        .clipped()
+        .clipShape(isPlayerPhoto ? AnyShape(Circle()) : AnyShape(RoundedRectangle(cornerRadius: 14, style: .continuous)))
+        .overlay {
+            if isPlayerPhoto {
+                Circle().stroke(AppTheme.border, lineWidth: 1)
+            } else {
+                RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(AppTheme.border, lineWidth: 1)
+            }
+        }
+    }
+
+    @ViewBuilder private var background: some View {
+        if isPlayerPhoto {
+            Circle().fill(LinearGradient(colors: [AppTheme.cardRaised, AppTheme.greenDeep.opacity(0.45)], startPoint: .top, endPoint: .bottom))
+        } else {
+            RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.white.opacity(0.055))
+        }
     }
 
     private var fallback: some View {
-        Image(systemName: "sportscourt.fill")
+        Image(systemName: isPlayerPhoto ? "person.crop.circle.fill" : (isLeagueLogo ? "trophy.fill" : "shield.fill"))
             .resizable()
             .scaledToFit()
-            .padding(12)
-            .foregroundStyle(AppTheme.dimmed)
+            .padding(isPlayerPhoto ? 8 : 12)
+            .foregroundStyle(isPlayerPhoto ? AppTheme.green.opacity(0.72) : AppTheme.dimmed)
     }
 }
 
@@ -254,14 +278,32 @@ struct EditorialArtwork: View {
                     switch phase {
                     case .success(let image): image.resizable().scaledToFill()
                     default:
-                        Image(systemName: "newspaper.fill").font(.title2).foregroundStyle(AppTheme.green)
+                        fallbackArtwork
                     }
                 }
             } else {
-                Image(systemName: "newspaper.fill").font(.title2).foregroundStyle(AppTheme.green)
+                fallbackArtwork
             }
         }
         .clipped()
         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(AppTheme.border, lineWidth: 1))
     }
+
+    private var fallbackArtwork: some View {
+        VStack(spacing: 7) {
+            BrandLogo(compact: true)
+            Text(article.source.isEmpty ? "أخبار كرة القدم" : article.source)
+                .font(.caption2.bold()).foregroundStyle(AppTheme.muted).lineLimit(1)
+        }
+    }
+}
+
+private struct AnyShape: Shape {
+    private let pathBuilder: @Sendable (CGRect) -> Path
+
+    init<S: Shape>(_ shape: S) {
+        pathBuilder = { rect in shape.path(in: rect) }
+    }
+
+    func path(in rect: CGRect) -> Path { pathBuilder(rect) }
 }
