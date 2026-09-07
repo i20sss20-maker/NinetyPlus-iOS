@@ -2,7 +2,7 @@ import SwiftUI
 
 struct V2HomeView: View {
     @StateObject private var api = APISportsStore.shared
-    @StateObject private var content = SportsStore.shared
+    @StateObject private var content = EditorialStore.shared
     @AppStorage("favoriteTeamIDs") private var favoriteTeamIDs = ""
     @AppStorage("favoritePlayerIDs") private var favoritePlayerIDs = ""
     @State private var favoriteUpcoming: [APIPlusMatch] = []
@@ -19,12 +19,9 @@ struct V2HomeView: View {
             return false
         }
     }
-
     private var forYouMatches: [APIPlusMatch] {
         var seen = Set<String>()
-        return (personalizedMatches + favoriteUpcoming)
-            .filter { seen.insert($0.id).inserted }
-            .sorted { ($0.date ?? .distantFuture) < ($1.date ?? .distantFuture) }
+        return (personalizedMatches + favoriteUpcoming).filter { seen.insert($0.id).inserted }.sorted { ($0.date ?? .distantFuture) < ($1.date ?? .distantFuture) }
     }
 
     var body: some View {
@@ -54,9 +51,7 @@ struct V2HomeView: View {
                 async let c: Void = loadFavoriteUpcoming()
                 _ = await (a, b, c)
             }
-            .onChange(of: favoriteTeamIDs) { _, _ in
-                Task { await loadFavoriteUpcoming(force: true) }
-            }
+            .onChange(of: favoriteTeamIDs) { _, _ in Task { await loadFavoriteUpcoming(force: true) } }
         }
     }
 
@@ -92,52 +87,36 @@ struct V2HomeView: View {
                 sectionHeader("لك", subtitle: "خصص تجربتك")
                 NavigationLink { V2FavoritesView() } label: {
                     HStack(spacing: 14) {
-                        Image(systemName: "star.circle.fill")
-                            .font(.system(size: 34))
-                            .foregroundStyle(AppTheme.green)
+                        Image(systemName: "star.circle.fill").font(.system(size: 34)).foregroundStyle(AppTheme.green)
                         VStack(alignment: .leading, spacing: 4) {
                             Text("خل 90+ يعرف اهتماماتك").font(.headline).foregroundStyle(.white)
-                            Text("تابع أنديتك ولاعبيك وبتظهر مبارياتهم ومحتواهم هنا تلقائيًا.")
-                                .font(.caption).foregroundStyle(AppTheme.muted).multilineTextAlignment(.leading)
+                            Text("تابع أنديتك ولاعبيك وبتظهر مبارياتهم ومحتواهم هنا تلقائيًا.").font(.caption).foregroundStyle(AppTheme.muted).multilineTextAlignment(.leading)
                         }
-                        Spacer()
-                        Image(systemName: "chevron.left").foregroundStyle(AppTheme.muted)
+                        Spacer(); Image(systemName: "chevron.left").foregroundStyle(AppTheme.muted)
                     }
-                    .padding(16)
-                    .background(AppTheme.card, in: RoundedRectangle(cornerRadius: 20))
-                    .padding(.horizontal, 16)
-                }
-                .buttonStyle(.plain)
+                    .padding(16).background(AppTheme.card, in: RoundedRectangle(cornerRadius: 20)).padding(.horizontal, 16)
+                }.buttonStyle(.plain)
             }
         } else {
             VStack(spacing: 10) {
                 sectionHeader("لك", subtitle: "\(favoriteTeams.count) نادي • \(favoritePlayersCount) لاعب")
                 if loadingFavorites && forYouMatches.isEmpty {
-                    ProgressView("جاري تجهيز مباريات متابعاتك...")
-                        .tint(AppTheme.green)
-                        .font(.caption)
-                        .padding(22)
+                    ProgressView("جاري تجهيز مباريات متابعاتك...").tint(AppTheme.green).font(.caption).padding(22)
                 } else if forYouMatches.isEmpty {
                     NavigationLink { V2FavoritesView() } label: {
                         HStack(spacing: 12) {
                             Image(systemName: "star.fill").foregroundStyle(AppTheme.green)
                             VStack(alignment: .leading, spacing: 3) {
                                 Text("متابعاتك محفوظة").font(.subheadline.bold()).foregroundStyle(.white)
-                                Text("لا توجد مباراة قريبة للأندية التي تتابعها حاليًا. افتح مركز المتابعة لرؤية أنديتك ولاعبيك.")
-                                    .font(.caption).foregroundStyle(AppTheme.muted).multilineTextAlignment(.leading)
+                                Text("لا توجد مباراة قريبة للأندية التي تتابعها حاليًا. افتح مركز المتابعة لرؤية أنديتك ولاعبيك.").font(.caption).foregroundStyle(AppTheme.muted).multilineTextAlignment(.leading)
                             }
-                            Spacer()
-                            Image(systemName: "chevron.left").foregroundStyle(AppTheme.muted)
+                            Spacer(); Image(systemName: "chevron.left").foregroundStyle(AppTheme.muted)
                         }
-                        .padding(14)
-                        .background(AppTheme.card, in: RoundedRectangle(cornerRadius: 18))
-                        .padding(.horizontal, 16)
-                    }
-                    .buttonStyle(.plain)
+                        .padding(14).background(AppTheme.card, in: RoundedRectangle(cornerRadius: 18)).padding(.horizontal, 16)
+                    }.buttonStyle(.plain)
                 } else {
                     ForEach(forYouMatches.prefix(6)) { match in
-                        NavigationLink { V2MatchCenterView(match: match) } label: { APICompactMatchCard(match: match) }
-                            .buttonStyle(.plain)
+                        NavigationLink { V2MatchCenterView(match: match) } label: { APICompactMatchCard(match: match) }.buttonStyle(.plain)
                     }
                 }
             }
@@ -174,15 +153,17 @@ struct V2HomeView: View {
             if content.news.isEmpty { emptyCard("جاري جلب آخر الأخبار", icon: "newspaper") }
             else {
                 ForEach(Array(content.news.prefix(4))) { article in
-                    Link(destination: article.url ?? URL(string: "https://news.google.com")!) {
-                        HStack(spacing: 12) {
-                            RoundedRectangle(cornerRadius: 12).fill(AppTheme.green.opacity(0.12)).frame(width: 52, height: 52).overlay { Image(systemName: "newspaper.fill").foregroundStyle(AppTheme.green) }
-                            VStack(alignment: .leading, spacing: 5) {
-                                Text(article.title).font(.subheadline.bold()).foregroundStyle(.white).lineLimit(2)
-                                HStack(spacing: 6) { Text(article.source); Text("•"); Text(article.date, style: .relative) }.font(.caption2).foregroundStyle(AppTheme.muted)
-                            }
-                            Spacer(minLength: 0)
-                        }.padding(12).background(AppTheme.card, in: RoundedRectangle(cornerRadius: 18)).padding(.horizontal, 16)
+                    if let url = article.url {
+                        Link(destination: url) {
+                            HStack(spacing: 12) {
+                                RoundedRectangle(cornerRadius: 12).fill(AppTheme.green.opacity(0.12)).frame(width: 52, height: 52).overlay { Image(systemName: "newspaper.fill").foregroundStyle(AppTheme.green) }
+                                VStack(alignment: .leading, spacing: 5) {
+                                    Text(article.title).font(.subheadline.bold()).foregroundStyle(.white).lineLimit(2)
+                                    HStack(spacing: 6) { Text(article.source); Text("•"); Text(article.date, style: .relative) }.font(.caption2).foregroundStyle(AppTheme.muted)
+                                }
+                                Spacer(minLength: 0)
+                            }.padding(12).background(AppTheme.card, in: RoundedRectangle(cornerRadius: 18)).padding(.horizontal, 16)
+                        }
                     }
                 }
             }
@@ -192,23 +173,17 @@ struct V2HomeView: View {
     @MainActor private func loadFavoriteUpcoming(force: Bool = false) async {
         guard APIFootballClient.isConfigured else { return }
         let ids = Array(favoriteTeams.prefix(6))
-        guard !ids.isEmpty else {
-            favoriteUpcoming = []
-            return
-        }
+        guard !ids.isEmpty else { favoriteUpcoming = []; return }
         if !force, !favoriteUpcoming.isEmpty { return }
         loadingFavorites = true
         defer { loadingFavorites = false }
-
         var combined: [APIPlusMatch] = []
         for id in ids {
             let items = (try? await APISportsStore.shared.teamFixtures(teamID: id, next: true)) ?? []
             combined.append(contentsOf: items.prefix(3))
         }
         var seen = Set<String>()
-        favoriteUpcoming = combined
-            .filter { seen.insert($0.id).inserted }
-            .sorted { ($0.date ?? .distantFuture) < ($1.date ?? .distantFuture) }
+        favoriteUpcoming = combined.filter { seen.insert($0.id).inserted }.sorted { ($0.date ?? .distantFuture) < ($1.date ?? .distantFuture) }
     }
 
     private var setupCard: some View { VStack(spacing: 14) { Image(systemName: "bolt.horizontal.circle.fill").font(.system(size: 46)).foregroundStyle(AppTheme.green); Text("تفعيل البيانات الرياضية").font(.title2.bold()); Text("هذه خطوة مؤقتة أثناء التطوير. في النسخة النهائية سيعمل 90+ مباشرة بدون أي إعداد من المستخدم.").font(.subheadline).foregroundStyle(AppTheme.muted).multilineTextAlignment(.center) }.padding(24).background(AppTheme.card, in: RoundedRectangle(cornerRadius: 24)).padding(.horizontal, 16) }
