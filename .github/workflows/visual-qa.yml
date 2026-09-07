@@ -30,6 +30,10 @@ jobs:
           mkdir -p evidence
           python3 scripts/probe_dashboard.py > evidence/source-check.json
           cat evidence/source-check.json
+      - name: Probe production match detail end-to-end
+        run: |
+          python3 scripts/probe_match_detail.py
+          cat evidence/production-match-detail.json
       - name: Test actual current-season table and identifiers
         run: |
           swiftc -swift-version 5 -parse-as-library Sources/Core/PublicLeagueTable.swift Tests/PublicSourceTests.swift -o /tmp/public-tests
