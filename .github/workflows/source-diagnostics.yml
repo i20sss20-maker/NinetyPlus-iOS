@@ -3,12 +3,15 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths: ['.github/workflows/source-diagnostics.yml']
+    paths: ['.github/workflows/source-diagnostics.yml', 'scripts/probe_match_detail.py']
 jobs:
   inspect:
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 5
     steps:
+      - uses: actions/checkout@v4
+      - name: Verify canonical completed-match detail in production
+        run: python3 scripts/probe_match_detail.py
       - name: Verify supported fixture and name queries
         run: |
           mkdir -p evidence
@@ -36,7 +39,8 @@ jobs:
           print(json.dumps(report,ensure_ascii=False,indent=2))
           PY
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
-          name: NinetyPlus-Free-Plan-Queries
+          name: NinetyPlus-Production-Data-QA
           path: evidence/
           retention-days: 7
