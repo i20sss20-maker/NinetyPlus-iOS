@@ -1,40 +1,5 @@
 import SwiftUI
 
-// Legacy compatibility layer.
-// All production navigation now goes through the V2 screens and the Railway backend.
-
-struct APIKeySetupView: View {
-    var body: some View {
-        NavigationStack {
-            VStack(spacing: 16) {
-                Image(systemName: APIFootballClient.isConfigured ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
-                    .font(.system(size: 52))
-                    .foregroundStyle(APIFootballClient.isConfigured ? AppTheme.green : .orange)
-                Text("مصدر بيانات 90+")
-                    .font(.title2.bold())
-                Text(APIFootballClient.isConfigured
-                     ? "الخدمة مربوطة تلقائيًا عبر 90+ Backend. لا يحتاج المستخدم إلى إدخال أي مفتاح API."
-                     : "الخدمة الرياضية غير متاحة حاليًا. حاول مرة أخرى لاحقًا.")
-                    .font(.subheadline)
-                    .foregroundStyle(AppTheme.muted)
-                    .multilineTextAlignment(.center)
-            }
-            .padding(24)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(AppTheme.bg.ignoresSafeArea())
-            .navigationTitle("حالة البيانات")
-        }
-    }
-}
-
-struct APIHomeView: View {
-    var body: some View { V2HomeView() }
-}
-
-struct APIMatchesView: View {
-    var body: some View { V2MatchesView() }
-}
-
 struct APICompactMatchCard: View {
     let match: APIPlusMatch
 
@@ -106,32 +71,4 @@ struct APICompactMatchCard: View {
                 .frame(maxWidth: 95)
         }
     }
-}
-
-struct APIMatchDetailView: View {
-    let match: APIPlusMatch
-    var body: some View { V2MatchCenterView(match: match) }
-}
-
-struct APIDiscoverView: View {
-    var body: some View { V2DiscoverView() }
-}
-
-struct APITeamView: View {
-    let team: APIPlusTeam
-    var body: some View { V2TeamView(team: team) }
-}
-
-struct APIPlayerView: View {
-    let player: APIPlusPlayer
-    var body: some View { V2PlayerView(player: player) }
-}
-
-struct APIMoreView: View {
-    var body: some View { V2MoreView() }
-}
-
-struct APIStandingsView: View {
-    let league: LeagueOption
-    var body: some View { V2LeagueHubView(league: league) }
 }
