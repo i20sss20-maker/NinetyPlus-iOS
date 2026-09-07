@@ -3,11 +3,15 @@ import Foundation
 enum APIFootballError: LocalizedError {
     case missingConfiguration
     case badResponse
+    case serviceUnavailable
+    case rateLimited
 
     var errorDescription: String? {
         switch self {
         case .missingConfiguration: return "مصدر بيانات 90+ غير مهيأ"
         case .badResponse: return "تعذر قراءة استجابة مصدر بيانات 90+"
+        case .serviceUnavailable: return "الخدمة غير متاحة مؤقتًا. حاول مرة أخرى بعد قليل"
+        case .rateLimited: return "تم الوصول للحد المؤقت للطلبات. حاول مرة أخرى بعد قليل"
         }
     }
 }
@@ -52,10 +56,7 @@ enum APIFootballClient {
         request.cachePolicy = .reloadIgnoringLocalCacheData
         request.setValue("NinetyPlus/2.0 iOS", forHTTPHeaderField: "User-Agent")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-            throw APIFootballError.badResponse
-        }
+        let data = try await perform(request, retryOnce: true)
         return try JSONDecoder().decode(NinetyPlusBackendHealth.self, from: data)
     }
 
@@ -72,11 +73,44 @@ enum APIFootballClient {
         request.setValue("NinetyPlus/2.0 iOS", forHTTPHeaderField: "User-Agent")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
 
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+        let data = try await perform(request, retryOnce: true)
+        do {
+            return try JSONDecoder().decode(T.self, from: data)
+        } catch {
             throw APIFootballError.badResponse
         }
-        return try JSONDecoder().decode(T.self, from: data)
+    }
+
+    private static func perform(_ request: URLRequest, retryOnce: Bool) async throws -> Data {
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse else { throw APIFootballError.badResponse }
+            switch http.statusCode {
+            case 200..<300:
+                return data
+            case 429:
+                throw APIFootballError.rateLimited
+            case 500..<600:
+                if retryOnce {
+                    try? await Task.sleep(for: .milliseconds(650))
+                    return try await perform(request, retryOnce: false)
+                }
+                throw APIFootballError.serviceUnavailable
+            default:
+                throw APIFootballError.badResponse
+            }
+        } catch let error as APIFootballError {
+            throw error
+        } catch let error as URLError {
+            let transient: Set<URLError.Code> = [.timedOut, .networkConnectionLost, .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed]
+            if retryOnce, transient.contains(error.code) {
+                try? await Task.sleep(for: .milliseconds(650))
+                return try await perform(request, retryOnce: false)
+            }
+            throw APIFootballError.serviceUnavailable
+        } catch {
+            throw APIFootballError.serviceUnavailable
+        }
     }
 
     private static func normalizedBackendURL(_ raw: String) -> URL? {
