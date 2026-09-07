@@ -31,7 +31,6 @@ final class EditorialStore: ObservableObject {
            let cached = try? JSONDecoder().decode([String: EditorialFeedSnapshot].self, from: data) { snapshots = cached }
         assemble()
     }
-
     private static var feeds: [EditorialFeedDefinition] {
         func google(_ query: String) -> URL {
             var url = URLComponents(string: "https://news.google.com/rss/search")!
@@ -81,30 +80,41 @@ final class EditorialStore: ObservableObject {
         let (data, response) = try await URLSession.shared.data(for: request)
         try Task.checkCancellation()
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { throw URLError(.badServerResponse) }
-        return Array(try EditorialRSSParser(data: data, source: feed.source).parse().prefix(60))
+        let articles = try EditorialRSSParser(data: data, source: feed.source).parse()
+        return Array(articles.prefix(60))
     }
     private func assemble() {
-        let old = news + transfers
+        var existingIDs: [URL: UUID] = [:]
+        for article in news + transfers { if let url = article.url { existingIDs[url] = article.id } }
         func combine(_ isTransfers: Bool) -> [RealArticle] {
-            var seen = Set<String>()
-            return Self.feeds.filter { $0.transfers == isTransfers }.flatMap { snapshots[$0.id]?.articles ?? [] }
-                .filter { article in
-                    guard let url = article.url, !article.title.isEmpty else { return false }
-                    return seen.insert(url.absoluteString).inserted
-                }.sorted { $0.date > $1.date }.prefix(100).map { article in
-                    RealArticle(id: old.first(where: { $0.url == article.url })?.id ?? article.id,
-                                title: article.title, source: article.source, date: article.date, url: article.url, imageURL: article.imageURL)
-                }
+            var candidates: [RealArticle] = []
+            for feed in Self.feeds where feed.transfers == isTransfers {
+                if let snapshot = snapshots[feed.id] { candidates.append(contentsOf: snapshot.articles) }
+            }
+            candidates.sort { $0.date > $1.date }
+            var result: [RealArticle] = []
+            var seen = Set<URL>()
+            for article in candidates {
+                guard let url = article.url, !article.title.isEmpty, seen.insert(url).inserted else { continue }
+                let item = RealArticle(id: existingIDs[url] ?? article.id, title: article.title, source: article.source,
+                                       date: article.date, url: url, imageURL: article.imageURL)
+                result.append(item)
+                if result.count == 100 { break }
+            }
+            return result
         }
-        news = combine(false); transfers = combine(true)
-        let newsFailures = Self.feeds.filter { !$0.transfers }.compactMap { failures[$0.id] }
+        news = combine(false)
+        transfers = combine(true)
+        var newsFailures: [String] = []
+        for feed in Self.feeds where !feed.transfers {
+            if let message = failures[feed.id] { newsFailures.append(message) }
+        }
         newsError = newsFailures.isEmpty ? nil : newsFailures.joined(separator: " ")
         errorMessage = failures.isEmpty ? nil : "تعذر تحديث بعض المصادر؛ الأخبار التي وصلت ما زالت معروضة."
         lastUpdated = snapshots.values.map(\.fetchedAt).min()
     }
 }
 
-/// The URL cache respects the image server's expiry; the in-memory cache is bounded.
 private actor SportsImageRepository {
     static let shared = SportsImageRepository()
     private let cache = NSCache<NSURL, NSData>()
@@ -164,8 +174,9 @@ private struct SportsNetworkImage: View {
             do {
                 let data = try await SportsImageRepository.shared.data(for: requested)
                 try Task.checkCancellation()
+                let options: [CFString: Any] = [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceThumbnailMaxPixelSize: 1000, kCGImageSourceCreateThumbnailWithTransform: true]
                 guard let source = CGImageSourceCreateWithData(data as CFData, nil),
-                      let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceThumbnailMaxPixelSize: 1000, kCGImageSourceCreateThumbnailWithTransform: true] as CFDictionary) else { failed = true; return }
+                      let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { failed = true; return }
                 image = UIImage(cgImage: thumbnail); loadedURL = requested
             } catch { if !Task.isCancelled { failed = true } }
         }
@@ -183,8 +194,7 @@ struct RemoteBadge: View {
                     .background(AppTheme.cardRaised).clipShape(Circle()).overlay(Circle().stroke(AppTheme.border))
             } else {
                 SportsNetworkImage(url: EditorialRSSParser.webURL(url), fit: true, fallback: isLeague ? "trophy" : "shield")
-                    .padding(3).background(Color.white.opacity(0.06))
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .padding(3).background(Color.white.opacity(0.06)).clipShape(RoundedRectangle(cornerRadius: 10))
             }
         }.accessibilityHidden(true)
     }
@@ -194,9 +204,8 @@ struct EditorialArtwork: View {
     let article: RealArticle
     var body: some View {
         Group {
-            if let url = article.imageURL {
-                SportsNetworkImage(url: url, fit: false, fallback: "photo")
-            } else {
+            if let url = article.imageURL { SportsNetworkImage(url: url, fit: false, fallback: "photo") }
+            else {
                 VStack(spacing: 8) {
                     Text(article.source).font(.caption.bold()).foregroundStyle(AppTheme.muted)
                     Image(systemName: "newspaper").foregroundStyle(AppTheme.muted)
