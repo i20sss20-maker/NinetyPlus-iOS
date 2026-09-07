@@ -85,11 +85,16 @@ enum PublicScoreboardSource {
                 group.addTask { try await Cache.shared.load(date: date, league: league, force: force) }
             }
             var all: [APIPlusMatch] = []
-            // A single public league failure should not discard successful leagues.
+            var successfulLeagues = 0
+            // A single public league failure should not discard successful leagues,
+            // and a successful empty match day is a real empty state, not an outage.
             while let result = await group.nextResult() {
-                if case .success(let matches) = result { all.append(contentsOf: matches) }
+                if case .success(let matches) = result {
+                    successfulLeagues += 1
+                    all.append(contentsOf: matches)
+                }
             }
-            guard !all.isEmpty else { throw APIFootballError.serviceUnavailable }
+            guard successfulLeagues > 0 else { throw APIFootballError.serviceUnavailable }
             return deduplicated(all)
         }
     }
@@ -100,16 +105,23 @@ enum PublicScoreboardSource {
         let today = calendar.startOfDay(for: Date())
         let offsets = next ? Array(0...7) : Array(-7...0)
         var output: [APIPlusMatch] = []
+        var successfulDays = 0
         for start in stride(from: 0, to: offsets.count, by: 3) {
             let batch = Array(offsets[start..<min(start + 3, offsets.count)])
-            await withTaskGroup(of: [APIPlusMatch]?.self) { group in
+            await withTaskGroup(of: Result<[APIPlusMatch], Error>.self) { group in
                 for offset in batch {
                     guard let date = calendar.date(byAdding: .day, value: offset, to: today) else { continue }
-                    group.addTask { try? await Cache.shared.load(date: date, league: league, force: false) }
+                    group.addTask {
+                        do { return .success(try await Cache.shared.load(date: date, league: league, force: false)) }
+                        catch { return .failure(error) }
+                    }
                 }
-                for await value in group { if let value { output.append(contentsOf: value) } }
+                for await result in group {
+                    if case .success(let value) = result { successfulDays += 1; output.append(contentsOf: value) }
+                }
             }
         }
+        guard successfulDays > 0 else { throw APIFootballError.serviceUnavailable }
         return deduplicated(output)
     }
 
@@ -120,15 +132,19 @@ enum PublicScoreboardSource {
         let today = calendar.startOfDay(for: Date())
         let offsets = next ? Array(0...7) : Array(-7...0)
         var output: [APIPlusMatch] = []
+        var successfulDays = 0
         for offset in offsets {
             guard let date = calendar.date(byAdding: .day, value: offset, to: today) else { continue }
-            if let matches = try? await fixtures(date: date) {
+            do {
+                let matches = try await fixtures(date: date)
+                successfulDays += 1
                 output.append(contentsOf: matches.filter {
                     normalizedTeam($0.home) == needle || normalizedTeam($0.away) == needle ||
                     normalizedTeam(SportsArabic.team($0.home)) == needle || normalizedTeam(SportsArabic.team($0.away)) == needle
                 })
-            }
+            } catch { continue }
         }
+        guard successfulDays > 0 else { throw APIFootballError.serviceUnavailable }
         return deduplicated(output)
     }
 
