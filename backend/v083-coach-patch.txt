@@ -1,0 +1,79 @@
+// v0.8.3 — complete lineup metadata without spending API-Football quota.
+replaceOnce(
+  "function normalizeESPNDetail(value) {",
+  `function normalizeESPNCoach(value) {
+  if (!value) return null;
+  if (Array.isArray(value)) {
+    for (const item of value) { const coach=normalizeESPNCoach(item); if (coach) return coach; }
+    return null;
+  }
+  if (typeof value === 'string') return value.trim() ? {name:value.trim()} : null;
+  if (typeof value !== 'object') return null;
+  const person=value.athlete || value.person || value.coach || value.headCoach || value;
+  const name=person?.displayName || person?.fullName || person?.name || null;
+  if (!name) return null;
+  return {id:person?.id?.toString?.() || null,name,photo:person?.headshot?.href || person?.photo || null};
+}
+function coachCandidateFromRoster(value) {
+  const direct=[value?.coach,value?.headCoach,value?.team?.coach,value?.team?.headCoach];
+  for (const candidate of direct) { const coach=normalizeESPNCoach(candidate); if (coach) return coach; }
+  const groups=[value?.coaches,value?.team?.coaches,value?.staff,value?.team?.staff];
+  for (const group of groups) {
+    if (!Array.isArray(group)) continue;
+    for (const member of group) {
+      const role=String(member?.role || member?.position?.displayName || member?.position?.name || member?.type?.text || '').toLowerCase();
+      if (role && !role.includes('coach') && !role.includes('manager') && !role.includes('head')) continue;
+      const coach=normalizeESPNCoach(member); if (coach) return coach;
+    }
+  }
+  return null;
+}
+function normalizeESPNDetail(value) {`,
+  'ESPN coach normalizer'
+);
+
+replaceOnce(
+  "    formation:r?.formation || r?.formations?.[0]?.name || null,\n    players:",
+  "    formation:r?.formation || r?.formations?.[0]?.name || null,\n    coach:normalizeESPNCoach(r?.coach || r?.headCoach || r?.coaches || r?.team?.coach || r?.team?.headCoach),\n    players:",
+  'summary lineup coach'
+);
+
+replaceOnce(
+`async function espnMatchDetail(match) {
+  const league=findESPNLeagueForMatch(match); const eventId=match?.providerIds?.espn;
+  if (!league || !eventId) return null;
+  const url=\`${ESPN_SITE}/\${encodeURIComponent(league.code)}/summary?event=\${encodeURIComponent(eventId)}\`;
+  const response=await fetchWithTimeout(url,{headers:{accept:'application/json','user-agent':'NinetyPlus-Backend/0.8'}},10000);
+  if (!response.ok) return null;
+  return normalizeESPNDetail(await response.json());
+}`,
+`async function espnTeamCoach(leagueCode,teamId) {
+  if (!leagueCode || !teamId) return null;
+  const cacheKey=\`espn:coach:\${leagueCode}:\${teamId}\`;
+  const cached=getCached(cacheKey); if (cached) { try { return JSON.parse(cached.body); } catch {} }
+  const url=\`${ESPN_SITE}/\${encodeURIComponent(leagueCode)}/teams/\${encodeURIComponent(teamId)}/roster\`;
+  try {
+    const response=await fetchWithTimeout(url,{headers:{accept:'application/json','user-agent':'NinetyPlus-Backend/0.8.3'}},10000);
+    if (!response.ok) return null;
+    const value=await response.json();
+    const coach=coachCandidateFromRoster(value);
+    if (coach) putCache(cacheKey,{status:200,ok:true,body:JSON.stringify(coach)},21600);
+    return coach;
+  } catch { return null; }
+}
+async function espnMatchDetail(match) {
+  const league=findESPNLeagueForMatch(match); const eventId=match?.providerIds?.espn;
+  if (!league || !eventId) return null;
+  const url=\`${ESPN_SITE}/\${encodeURIComponent(league.code)}/summary?event=\${encodeURIComponent(eventId)}\`;
+  const response=await fetchWithTimeout(url,{headers:{accept:'application/json','user-agent':'NinetyPlus-Backend/0.8.3'}},10000);
+  if (!response.ok) return null;
+  const detail=normalizeESPNDetail(await response.json());
+  const missing=(detail.lineups || []).filter(lineup=>!lineup?.coach?.name && lineup?.team?.id);
+  await Promise.all(missing.map(async lineup=>{ const coach=await espnTeamCoach(league.code,lineup.team.id); if (coach) lineup.coach=coach; }));
+  return detail;
+}`,
+  'roster coach fallback'
+);
+
+s = s.replaceAll("version:'0.8.2'", "version:'0.8.3'");
+s = s.replaceAll('90+ backend v0.8.2 listening', '90+ backend v0.8.3 listening');
