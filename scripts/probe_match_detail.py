@@ -9,9 +9,20 @@ OUT = Path("evidence/production-match-detail.json")
 OUT.parent.mkdir(parents=True, exist_ok=True)
 
 
+def save(report):
+    OUT.write_text(json.dumps(report, ensure_ascii=False, indent=2))
+
+
+def fail(report, message):
+    report["ok"] = False
+    report["error"] = message
+    save(report)
+    raise SystemExit("production match probe: " + message)
+
+
 def get_json(path, params=None, timeout=20):
     query = ("?" + urlencode(params)) if params else ""
-    req = Request(BASE + path + query, headers={"User-Agent": "NinetyPlus-QA/1.4"})
+    req = Request(BASE + path + query, headers={"User-Agent": "NinetyPlus-QA/1.5"})
     with urlopen(req, timeout=timeout) as response:
         return response.status, json.load(response)
 
@@ -54,9 +65,13 @@ def lineup_summary(lineup):
         player = p.get("player") if isinstance(p, dict) else None
         if isinstance(player, dict): names.append(player.get("name"))
         elif isinstance(p, dict): names.append(p.get("name"))
-    return {"team": team.get("name") if isinstance(team, dict) else None, "formation": lineup.get("formation"),
-            "coach": coach.get("name") if isinstance(coach, dict) else None, "starters": len(start),
-            "substitutes": len(subs), "namedPlayers": len([n for n in names if n])}
+    return {"team": team.get("name") if isinstance(team, dict) else None,
+            "teamId": team.get("id") if isinstance(team, dict) else None,
+            "formation": lineup.get("formation"),
+            "coach": coach.get("name") if isinstance(coach, dict) else None,
+            "coachRaw": coach if isinstance(coach, dict) else None,
+            "starters": len(start), "substitutes": len(subs),
+            "namedPlayers": len([n for n in names if n])}
 
 
 report = {"checkedAt": datetime.now(timezone.utc).isoformat(), "base": BASE, "days": []}
@@ -74,47 +89,48 @@ for offset in range(0, 8):
     except Exception as exc:
         report["days"].append({"date": day, "error": str(exc)})
 
-if not selected:
-    report.update({"ok": False, "error": "No completed fixture found in the last 8 days"})
-    OUT.write_text(json.dumps(report, ensure_ascii=False, indent=2)); raise SystemExit("production match probe: no completed fixture found")
-
+if not selected: fail(report, "No completed fixture found in the last 8 days")
 match_id = selected.get("canonicalId") or selected.get("id") or selected.get("matchID") or selected.get("matchId")
 if not match_id or not str(match_id).startswith("np:"):
-    report.update({"ok": False, "error": "Selected fixture had no canonical id", "selected": selected})
-    OUT.write_text(json.dumps(report, ensure_ascii=False, indent=2)); raise SystemExit("production match probe: canonical fixture id missing")
+    report["selected"] = selected
+    fail(report, "Selected fixture had no canonical id")
 
 status, detail = get_json("/api/v2/match", {"id": str(match_id), "date": selected_date})
-if status != 200 or not isinstance(detail, dict): raise SystemExit(f"production match probe: detail failed with {status}")
-if (detail.get("match") or {}).get("canonicalId") != match_id: raise SystemExit("production match probe: detail returned a different canonical match")
+if status != 200 or not isinstance(detail, dict): fail(report, f"detail failed with {status}")
+if (detail.get("match") or {}).get("canonicalId") != match_id: fail(report, "detail returned a different canonical match")
 
 lineups = detail.get("lineups") or []
 lineup_summaries = [lineup_summary(x) for x in lineups if isinstance(x, dict)]
-if len(lineup_summaries) < 2: raise SystemExit("production match probe: both team lineups are required")
-if any(x["starters"] < 11 or x["namedPlayers"] < 11 for x in lineup_summaries):
-    raise SystemExit("production match probe: incomplete starting lineups")
-if any(x["substitutes"] < 1 for x in lineup_summaries): raise SystemExit("production match probe: substitutes missing")
-if sum(1 for x in lineup_summaries if x["coach"]) < 2:
-    raise SystemExit("production match probe: both head coaches are required")
-
 stat_summaries = []
 for row in detail.get("statistics") or []:
     if not isinstance(row, dict): continue
     team = row.get("team") or {}; stats = row.get("statistics") or []
-    stat_summaries.append({"team": team.get("name") if isinstance(team, dict) else None, "statCount": len(stats)})
-if len(stat_summaries) < 2 or any(x["statCount"] < 5 for x in stat_summaries): raise SystemExit("production match probe: team statistics incomplete")
-if len(detail.get("events") or []) < 1: raise SystemExit("production match probe: completed match has no events")
+    stat_summaries.append({"team": team.get("name") if isinstance(team, dict) else None,
+                           "teamId": team.get("id") if isinstance(team, dict) else None,
+                           "statCount": len(stats)})
 venue = detail.get("venue") or {}
-if not isinstance(venue, dict) or not venue.get("name"): raise SystemExit("production match probe: venue missing")
 officials = detail.get("officials") or []
-if not any(isinstance(x, dict) and x.get("name") for x in officials): raise SystemExit("production match probe: referee/official missing")
-
-report.update({"ok": True, "selectedDate": selected_date,
+report.update({"selectedDate": selected_date,
     "selectedMatch": {"id": match_id, "home": team_name(selected, "home"), "away": team_name(selected, "away"),
-                      "status": status_code(selected), "sources": selected.get("sources") or [], "providerIds": selected.get("providerIds") or {}},
+                      "status": status_code(selected), "sources": selected.get("sources") or [], "providerIds": selected.get("providerIds") or {},
+                      "league": selected.get("league")},
     "detailStatus": status,
     "detail": {"events": len(detail.get("events") or []), "statistics": len(detail.get("statistics") or []), "lineups": len(lineups),
                "lineupQuality": lineup_summaries, "coachCoverage": sum(1 for x in lineup_summaries if x["coach"]),
                "statisticsQuality": stat_summaries, "venue": venue, "officials": officials,
                "coverage": detail.get("coverage") or {}, "source": detail.get("source"), "meta": detail.get("meta") or {}}})
-OUT.write_text(json.dumps(report, ensure_ascii=False, indent=2))
+save(report)
+
+if len(lineup_summaries) < 2: fail(report, "both team lineups are required")
+if any(x["starters"] < 11 or x["namedPlayers"] < 11 for x in lineup_summaries): fail(report, "incomplete starting lineups")
+if any(x["substitutes"] < 1 for x in lineup_summaries): fail(report, "substitutes missing")
+if sum(1 for x in lineup_summaries if x["coach"]) < 2: fail(report, "both head coaches are required")
+if len(stat_summaries) < 2 or any(x["statCount"] < 5 for x in stat_summaries): fail(report, "team statistics incomplete")
+if len(detail.get("events") or []) < 1: fail(report, "completed match has no events")
+if not isinstance(venue, dict) or not venue.get("name"): fail(report, "venue missing")
+if not any(isinstance(x, dict) and x.get("name") for x in officials): fail(report, "referee/official missing")
+
+report["ok"] = True
+report.pop("error", None)
+save(report)
 print(json.dumps(report, ensure_ascii=False, indent=2))
