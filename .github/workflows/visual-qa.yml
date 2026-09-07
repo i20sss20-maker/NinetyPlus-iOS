@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths: ['Sources/**', 'UITests/**', 'Tests/EditorialFeedTests.swift', 'Tests/PublicSourceTests.swift', 'project.yml', '.github/workflows/visual-qa.yml', 'scripts/probe_dashboard.py']
+    paths: ['Sources/**', 'UITests/**', 'Tests/**', 'project.yml', '.github/workflows/visual-qa.yml', 'scripts/**']
 concurrency:
   group: visual-qa-${{ github.ref }}
   cancel-in-progress: true
@@ -17,6 +17,10 @@ jobs:
         run: |
           swiftc -swift-version 5 -parse-as-library Sources/Core/EditorialFeed.swift Tests/EditorialFeedTests.swift -o /tmp/editorial-tests
           /tmp/editorial-tests
+      - name: Test player decoding and season labels
+        run: |
+          swiftc -swift-version 5 -parse-as-library Sources/Core/PlayerSeasonData.swift Sources/Core/SportsCopy.swift Tests/PlayerSeasonDataTests.swift -o /tmp/player-tests
+          /tmp/player-tests
       - name: Check actual dashboard sources
         run: |
           mkdir -p evidence
@@ -34,6 +38,8 @@ jobs:
           retention-days: 7
       - name: Install XcodeGen
         run: brew install xcodegen
+      - name: Generate 90+ app icon
+        run: swift scripts/generate_app_icon.swift
       - name: Generate project
         run: xcodegen generate
       - name: Choose simulator
