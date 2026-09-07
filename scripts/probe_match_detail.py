@@ -11,7 +11,7 @@ OUT.parent.mkdir(parents=True, exist_ok=True)
 
 def get_json(path, params=None, timeout=20):
     query = ("?" + urlencode(params)) if params else ""
-    req = Request(BASE + path + query, headers={"User-Agent": "NinetyPlus-QA/1.1"})
+    req = Request(BASE + path + query, headers={"User-Agent": "NinetyPlus-QA/1.2"})
     with urlopen(req, timeout=timeout) as response:
         return response.status, json.load(response)
 
@@ -42,6 +42,30 @@ def team_name(match, side):
     if isinstance(value, dict):
         return value.get("name") or value.get("displayName") or value.get("shortDisplayName")
     return value
+
+
+def lineup_summary(lineup):
+    team = lineup.get("team") or {}
+    coach = lineup.get("coach") or {}
+    start = lineup.get("startXI") or lineup.get("startingXI") or []
+    subs = lineup.get("substitutes") or lineup.get("bench") or []
+    flat = lineup.get("players") or []
+    if flat and not start and not subs:
+        start = [p for p in flat if p.get("starter") is True]
+        subs = [p for p in flat if p.get("starter") is not True]
+    names = []
+    for p in start + subs:
+        player = p.get("player") if isinstance(p, dict) else None
+        if isinstance(player, dict): names.append(player.get("name"))
+        elif isinstance(p, dict): names.append(p.get("name"))
+    return {
+        "team": team.get("name") if isinstance(team, dict) else None,
+        "formation": lineup.get("formation"),
+        "coach": coach.get("name") if isinstance(coach, dict) else None,
+        "starters": len(start),
+        "substitutes": len(subs),
+        "namedPlayers": len([n for n in names if n]),
+    }
 
 
 report = {"checkedAt": datetime.now(timezone.utc).isoformat(), "base": BASE, "days": []}
@@ -95,6 +119,22 @@ match_payload = detail.get("match") or {}
 if match_payload.get("canonicalId") != match_id:
     raise SystemExit("production match probe: detail returned a different canonical match")
 
+lineups = detail.get("lineups") or []
+lineup_summaries = [lineup_summary(x) for x in lineups if isinstance(x, dict)]
+if lineups and not any(x["namedPlayers"] for x in lineup_summaries):
+    raise SystemExit("production match probe: lineup containers returned without player data")
+
+stat_summaries = []
+for row in detail.get("statistics") or []:
+    if not isinstance(row, dict):
+        continue
+    team = row.get("team") or {}
+    stats = row.get("statistics") or []
+    stat_summaries.append({
+        "team": team.get("name") if isinstance(team, dict) else None,
+        "statCount": len(stats),
+    })
+
 report.update({
     "ok": True,
     "selectedDate": selected_date,
@@ -110,7 +150,9 @@ report.update({
     "detail": {
         "events": len(detail.get("events") or []),
         "statistics": len(detail.get("statistics") or []),
-        "lineups": len(detail.get("lineups") or []),
+        "lineups": len(lineups),
+        "lineupQuality": lineup_summaries,
+        "statisticsQuality": stat_summaries,
         "venue": detail.get("venue"),
         "officials": detail.get("officials") or [],
         "coverage": coverage,
