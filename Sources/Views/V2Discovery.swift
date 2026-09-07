@@ -6,6 +6,8 @@ struct V2DiscoverView: View {
     @State private var players: [APIPlusPlayer] = []
     @State private var loading = false
     @State private var searched = false
+    @State private var searchTask: Task<Void, Never>?
+    @State private var searchGeneration = 0
 
     var body: some View {
         NavigationStack {
@@ -29,7 +31,9 @@ struct V2DiscoverView: View {
             }
             .background(AppTheme.bg.ignoresSafeArea())
             .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "نادي أو لاعب")
-            .onSubmit(of: .search) { Task { await search() } }
+            .onChange(of: query) { _, value in scheduleSearch(value) }
+            .onSubmit(of: .search) { searchTask?.cancel(); Task { await search(query) } }
+            .onDisappear { searchTask?.cancel() }
         }
     }
 
@@ -43,18 +47,37 @@ struct V2DiscoverView: View {
     }
 
     private func suggestion(_ text: String) -> some View {
-        Button { query = text; Task { await search() } } label: {
+        Button { query = text } label: {
             Text(text).font(.caption.bold()).foregroundStyle(.white).padding(.horizontal, 12).padding(.vertical, 8).background(AppTheme.green.opacity(0.14), in: Capsule())
         }
     }
 
-    @MainActor private func search() async {
-        let text = query.trimmingCharacters(in: .whitespacesAndNewlines)
+    private func scheduleSearch(_ value: String) {
+        searchTask?.cancel()
+        let text = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if text.count < 2 {
+            searchGeneration += 1
+            searched = false; loading = false; teams = []; players = []
+            return
+        }
+        searchTask = Task {
+            try? await Task.sleep(for: .milliseconds(450))
+            guard !Task.isCancelled else { return }
+            await search(text)
+        }
+    }
+
+    @MainActor private func search(_ raw: String) async {
+        let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard text.count >= 2, APIFootballClient.isConfigured else { return }
-        searched = true; loading = true; defer { loading = false }
+        searchGeneration += 1
+        let generation = searchGeneration
+        searched = true; loading = true
         async let t = try? APISportsStore.shared.searchTeams(text)
         async let p = try? APISportsStore.shared.searchPlayers(text)
-        let result = await (t, p); teams = result.0 ?? []; players = result.1 ?? []
+        let result = await (t, p)
+        guard generation == searchGeneration, text == query.trimmingCharacters(in: .whitespacesAndNewlines) else { return }
+        teams = result.0 ?? []; players = result.1 ?? []; loading = false
     }
 
     private func section(_ title: String, count: Int) -> some View { HStack { Text(title).font(.title3.bold()); Spacer(); Text("\(count)").font(.caption).foregroundStyle(AppTheme.muted) }.padding(.horizontal, 16) }
@@ -96,9 +119,7 @@ struct V2PlayerView: View {
                     Text(player.name).font(.title.bold())
                     Button(action: toggleFavorite) { Label(isFavorite ? "تتم المتابعة" : "متابعة اللاعب", systemImage: isFavorite ? "star.fill" : "star").font(.subheadline.bold()).foregroundStyle(isFavorite ? .black : .white).padding(.horizontal, 18).padding(.vertical, 10).background(isFavorite ? AppTheme.green : AppTheme.green.opacity(0.14), in: Capsule()) }
                 }.frame(maxWidth: .infinity).padding(22).background(LinearGradient(colors: [AppTheme.card, AppTheme.green.opacity(0.10)], startPoint: .top, endPoint: .bottom), in: RoundedRectangle(cornerRadius: 24))
-
                 VStack(spacing: 0) { info("الجنسية", player.nationality); Divider().overlay(Color.white.opacity(0.08)); info("تاريخ الميلاد", player.birth); Divider().overlay(Color.white.opacity(0.08)); info("الطول", player.height); Divider().overlay(Color.white.opacity(0.08)); info("الوزن", player.weight) }.background(AppTheme.card, in: RoundedRectangle(cornerRadius: 18))
-
                 HStack { Text("إحصائيات الموسم").font(.title3.bold()); Spacer(); Text("\(APIFootballClient.currentSeason)").font(.caption).foregroundStyle(AppTheme.muted) }
                 if loadingStats { ProgressView().tint(AppTheme.green).padding(20) }
                 else if seasonStats.isEmpty { Text("لا توجد إحصائيات موسم متاحة من المصدر حاليًا").foregroundStyle(AppTheme.muted).frame(maxWidth: .infinity).padding(24).background(AppTheme.card, in: RoundedRectangle(cornerRadius: 18)) }
