@@ -1,4 +1,4 @@
-// v0.8.4 — complete lineup metadata without spending API-Football quota.
+// v0.8.5 — complete lineup metadata without spending API-Football quota.
 replaceOnce(
   "function normalizeESPNDetail(value) {",
   `function normalizeESPNCoach(value) {
@@ -15,7 +15,7 @@ replaceOnce(
   return {id:person?.id?.toString?.() || null,name,photo:person?.headshot?.href || person?.photo || null};
 }
 function findCoachDeep(value,depth=0,seen=new Set()) {
-  if (!value || typeof value !== 'object' || depth > 7 || seen.has(value)) return null;
+  if (!value || typeof value !== 'object' || depth > 8 || seen.has(value)) return null;
   seen.add(value);
   if (Array.isArray(value)) {
     for (const item of value) { const found=findCoachDeep(item,depth+1,seen); if (found) return found; }
@@ -36,10 +36,20 @@ function findCoachDeep(value,depth=0,seen=new Set()) {
   }
   return null;
 }
+function collectESPNRefs(value,out=new Set(),depth=0,seen=new Set()) {
+  if (!value || typeof value !== 'object' || depth>8 || seen.has(value)) return out;
+  seen.add(value);
+  if (Array.isArray(value)) { value.forEach(item=>collectESPNRefs(item,out,depth+1,seen)); return out; }
+  for (const [key,candidate] of Object.entries(value)) {
+    if ((key === '$ref' || key === 'href') && typeof candidate === 'string' && candidate.startsWith('http')) out.add(candidate.replace(/^http:/,'https:'));
+    else collectESPNRefs(candidate,out,depth+1,seen);
+  }
+  return out;
+}
 function coachCandidateFromRoster(value) {
   const direct=[value?.coach,value?.headCoach,value?.team?.coach,value?.team?.headCoach];
   for (const candidate of direct) { const coach=normalizeESPNCoach(candidate); if (coach) return coach; }
-  const groups=[value?.coaches,value?.team?.coaches,value?.staff,value?.team?.staff];
+  const groups=[value?.coaches,value?.team?.coaches,value?.staff,value?.team?.staff,value?.items];
   for (const group of groups) {
     if (!Array.isArray(group)) continue;
     for (const member of group) {
@@ -69,24 +79,38 @@ replaceOnce(
   if (!response.ok) return null;
   return normalizeESPNDetail(await response.json());
 }`,
-`async function espnTeamCoach(leagueCode,teamId) {
+`async function espnCoachFromPayload(value,headers) {
+  const direct=coachCandidateFromRoster(value); if (direct) return direct;
+  const refs=[...collectESPNRefs(value)].filter(url=>url.includes('espn.com')).slice(0,12);
+  for (const url of refs) {
+    try {
+      const response=await fetchWithTimeout(url,{headers},8000); if (!response.ok) continue;
+      const payload=await response.json();
+      const coach=coachCandidateFromRoster(payload) || normalizeESPNCoach(payload);
+      if (coach) return coach;
+    } catch {}
+  }
+  return null;
+}
+async function espnTeamCoach(leagueCode,teamId) {
   if (!leagueCode || !teamId) return null;
-  const cacheKey=\`espn:coach:\${leagueCode}:\${teamId}\`;
+  const cacheKey=\`espn:coach:v2:\${leagueCode}:\${teamId}\`;
   const cached=getCached(cacheKey); if (cached) { try { return JSON.parse(cached.body); } catch {} }
-  const headers={accept:'application/json','user-agent':'NinetyPlus-Backend/0.8.4'};
+  const headers={accept:'application/json','user-agent':'NinetyPlus-Backend/0.8.5'};
+  const year=new Date().getUTCFullYear();
+  const core='https://sports.core.api.espn.com/v2/sports/soccer/leagues';
   const urls=[
+    \`\${core}/\${encodeURIComponent(leagueCode)}/seasons/\${year}/teams/\${encodeURIComponent(teamId)}/coaches?limit=20&lang=en&region=us\`,
+    \`\${core}/\${encodeURIComponent(leagueCode)}/seasons/\${year-1}/teams/\${encodeURIComponent(teamId)}/coaches?limit=20&lang=en&region=us\`,
     \`\${ESPN_SITE}/\${encodeURIComponent(leagueCode)}/teams/\${encodeURIComponent(teamId)}/roster\`,
     \`\${ESPN_SITE}/\${encodeURIComponent(leagueCode)}/teams/\${encodeURIComponent(teamId)}\`
   ];
-  const results=await Promise.allSettled(urls.map(async url=>{
-    const response=await fetchWithTimeout(url,{headers},10000);
-    if (!response.ok) return null;
-    return response.json();
-  }));
-  for (const entry of results) {
-    if (entry.status !== 'fulfilled' || !entry.value) continue;
-    const coach=coachCandidateFromRoster(entry.value);
-    if (coach) { putCache(cacheKey,{status:200,ok:true,body:JSON.stringify(coach)},21600); return coach; }
+  for (const url of urls) {
+    try {
+      const response=await fetchWithTimeout(url,{headers},10000); if (!response.ok) continue;
+      const coach=await espnCoachFromPayload(await response.json(),headers);
+      if (coach) { putCache(cacheKey,{status:200,ok:true,body:JSON.stringify(coach)},21600); return coach; }
+    } catch {}
   }
   return null;
 }
@@ -94,17 +118,10 @@ async function espnMatchDetail(match) {
   const league=findESPNLeagueForMatch(match); const eventId=match?.providerIds?.espn;
   if (!league || !eventId) return null;
   const url=\`\${ESPN_SITE}/\${encodeURIComponent(league.code)}/summary?event=\${encodeURIComponent(eventId)}\`;
-  const response=await fetchWithTimeout(url,{headers:{accept:'application/json','user-agent':'NinetyPlus-Backend/0.8.4'}},10000);
+  const response=await fetchWithTimeout(url,{headers:{accept:'application/json','user-agent':'NinetyPlus-Backend/0.8.5'}},10000);
   if (!response.ok) return null;
   const raw=await response.json();
   const detail=normalizeESPNDetail(raw);
-  const summaryCoachCandidates=[];
-  const walk=(value,depth=0)=>{
-    if (!value || typeof value !== 'object' || depth>7) return;
-    if (Array.isArray(value)) { value.forEach(item=>walk(item,depth+1)); return; }
-    const coach=findCoachDeep(value,0,new Set()); if (coach) summaryCoachCandidates.push(coach);
-  };
-  walk(raw?.gameInfo); walk(raw?.header);
   const missing=(detail.lineups || []).filter(lineup=>!lineup?.coach?.name && lineup?.team?.id);
   await Promise.all(missing.map(async lineup=>{
     const coach=await espnTeamCoach(league.code,lineup.team.id);
@@ -112,10 +129,12 @@ async function espnMatchDetail(match) {
   }));
   return detail;
 }`,
-  'team detail coach fallback'
+  'team coach endpoint fallback'
 );
 
-s = s.replaceAll("version:'0.8.2'", "version:'0.8.4'");
-s = s.replaceAll("version:'0.8.3'", "version:'0.8.4'");
-s = s.replaceAll('90+ backend v0.8.2 listening', '90+ backend v0.8.4 listening');
-s = s.replaceAll('90+ backend v0.8.3 listening', '90+ backend v0.8.4 listening');
+s = s.replaceAll("version:'0.8.2'", "version:'0.8.5'");
+s = s.replaceAll("version:'0.8.3'", "version:'0.8.5'");
+s = s.replaceAll("version:'0.8.4'", "version:'0.8.5'");
+s = s.replaceAll('90+ backend v0.8.2 listening', '90+ backend v0.8.5 listening');
+s = s.replaceAll('90+ backend v0.8.3 listening', '90+ backend v0.8.5 listening');
+s = s.replaceAll('90+ backend v0.8.4 listening', '90+ backend v0.8.5 listening');
