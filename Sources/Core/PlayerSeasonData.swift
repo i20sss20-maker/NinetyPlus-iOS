@@ -23,7 +23,6 @@ struct APITopScorerItem: Decodable {
             }
             init(from decoder: Decoder) throws {
                 let fields = try decoder.container(keyedBy: CodingKeys.self)
-                // An explicit null from the provider stays unknown, not zero.
                 appearances = try fields.decodeIfPresent(Int.self, forKey: fields.contains(.providerAppearances) ? .providerAppearances : .appearances)
                 minutes = try fields.decodeIfPresent(Int.self, forKey: .minutes)
                 position = try fields.decodeIfPresent(String.self, forKey: .position)
@@ -42,9 +41,18 @@ struct APITopScorerItem: Decodable {
     let statistics: [Statistic]
 }
 
+enum SeasonCopy {
+    /// Football seasons are stored by their starting Gregorian year.
+    static func label(_ startYear: Int) -> String {
+        let end = (startYear + 1) % 100
+        return String(format: "%d–%02d", startYear, end)
+    }
+}
+
 /// Unknown statistics must remain optional all the way to the displayed metric.
 struct APIPlusPlayerSeasonStat: Identifiable, Hashable {
     let id: String
+    let season: Int
     let league: String
     let leagueLogo: String?
     let teamID: String?
@@ -59,8 +67,9 @@ struct APIPlusPlayerSeasonStat: Identifiable, Hashable {
     let yellowCards: Int?
     let redCards: Int?
 
-    init(playerID: String, index: Int, statistic: APITopScorerItem.Statistic) {
-        id = "\(playerID)-\(statistic.league?.id ?? index)-\(statistic.team.id ?? index)-\(index)"
+    init(playerID: String, season: Int, index: Int, statistic: APITopScorerItem.Statistic) {
+        id = "\(playerID)-\(season)-\(statistic.league?.id ?? index)-\(statistic.team.id ?? index)-\(index)"
+        self.season = season
         league = statistic.league?.name ?? "البطولة غير محددة"
         leagueLogo = statistic.league?.logo
         teamID = statistic.team.id.map(String.init)
