@@ -37,6 +37,9 @@ jobs:
           grep -q 'fallbackTeam' Sources/Views/V2LeagueHub.swift
           grep -q 'fallbackPlayer' Sources/Views/V2LeagueHub.swift
 
+      - name: Audit commercial source hygiene
+        run: python3 scripts/audit_commercial_hygiene.py
+
       - name: Test page loading state
         run: |
           swiftc -parse-as-library Sources/Core/PageResource.swift Tests/PageResourceTests.swift -o /tmp/ninetyplus-state-tests
