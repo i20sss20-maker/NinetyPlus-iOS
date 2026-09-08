@@ -58,12 +58,16 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.ninetyplus.app.widgets
+        CURRENT_PROJECT_VERSION: 200
+        MARKETING_VERSION: 2.0.0
         APPLICATION_EXTENSION_API_ONLY: YES
         SKIP_INSTALL: YES
     info:
       path: Widgets/Info.plist
       properties:
         CFBundleDisplayName: '90+ Widgets'
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
   NinetyPlusUITests:
