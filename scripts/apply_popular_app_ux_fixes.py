@@ -1,4 +1,5 @@
 from pathlib import Path
+import runpy
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -48,4 +49,8 @@ if 'testMatchesHubInteractionPattern' not in s:
     if marker not in s: raise RuntimeError('UI test insertion marker missing')
     s=s.replace(marker,test+marker,1)
 write(path,s)
+
+# Build 98 deepens the same information architecture: fast home shortcuts,
+# club/player summaries, and direct team navigation from the match center.
+runpy.run_path(str(ROOT / 'scripts/apply_deep_football_ux.py'), run_name='__main__')
 print('popular football app UX fixes applied')
