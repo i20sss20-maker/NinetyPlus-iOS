@@ -138,8 +138,9 @@ write(path, s)
 
 print("Build 100 product polish applied")
 
-# Build 102 is deliberately chained here because all release workflows already run
+# Later product passes are chained here because all release workflows already run
 # this final product-polish step after canonical + resilience transformations.
-next_patch = ROOT / "scripts/apply_build102_windowed_fixtures.py"
-if next_patch.exists():
-    exec(compile(next_patch.read_text(encoding="utf-8"), str(next_patch), "exec"), {"__name__": "__main__"})
+for patch_name in ("apply_build102_windowed_fixtures.py", "apply_build103_team_window_coalescing.py"):
+    next_patch = ROOT / "scripts" / patch_name
+    if next_patch.exists():
+        exec(compile(next_patch.read_text(encoding="utf-8"), str(next_patch), "exec"), {"__name__": "__main__"})
