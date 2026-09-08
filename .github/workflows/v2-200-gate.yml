@@ -71,6 +71,8 @@ jobs:
         run: |
           swiftc -swift-version 5 -parse-as-library Sources/Core/PageResource.swift Sources/Core/MatchCenterProgress.swift Tests/MatchCenterProgressTests.swift -o /tmp/match-tests
           /tmp/match-tests
+          swiftc -swift-version 5 Sources/Core/V2DeepLinkRouter.swift Tests/V2DeepLinkRouterTests.swift -o /tmp/deeplink-tests
+          /tmp/deeplink-tests
       - name: Install XcodeGen
         run: brew install xcodegen
       - name: Generate icon and project
