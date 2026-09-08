@@ -29,7 +29,9 @@ struct RootView: View {
             guard scenePhase == .active, network.isOnline, selection == 0 || selection == 1 else { return }
             await refreshNow()
             while !Task.isCancelled {
-                do { try await Task.sleep(for: .seconds(60)) } catch { return }
+                let hasLiveMatches = APISportsStore.shared.today.contains { MatchLivePolicy.isLive($0.status) }
+                let delay = AppRefreshPolicy.matchInterval(hasLiveMatches: hasLiveMatches)
+                do { try await Task.sleep(for: .seconds(delay)) } catch { return }
                 guard !Task.isCancelled else { return }
                 await refreshNow()
             }
