@@ -24,17 +24,22 @@ jobs:
           python3 scripts/apply_v2_all_at_once.py
           python3 scripts/apply_v2_final_polish.py
           python3 scripts/apply_v2_200_features.py
+          python3 scripts/apply_v2_200_batch2.py
       - name: Verify 200-feature wiring
         run: |
           python3 - <<'PY'
           from pathlib import Path
           checks = {
-            'feature center': ('Sources/Views/V2Personalization.swift', 'V2200FeatureCenterView'),
+            'feature center': ('Sources/Views/V2200FeatureCenterView.swift', 'V2200FeatureCenterView'),
+            'feature entry': ('Sources/Views/V2Personalization.swift', 'V2200FeatureCenterView()'),
             'pinning': ('Sources/Views/V2MatchExperience.swift', 'PinnedMatchStore'),
-            'followed filter': ('Sources/Views/V2MatchExperience.swift', 'متابعاتي'),
+            'my scores filter': ('Sources/Views/V2MatchExperience.swift', 'مبارياتي'),
             'pinned filter': ('Sources/Views/V2MatchExperience.swift', 'مثبتة'),
             'oled runtime': ('Sources/Core/Core.swift', 'V2FeaturePreferences.oledBlack'),
-            'reminders': ('Sources/Views/V2MatchExperience.swift', 'MatchReminderScheduler'),
+            'reminders': ('Sources/Views/V2MatchExperience.swift', 'MatchReminderScheduler.schedule'),
+            'event filters': ('Sources/Views/V2MatchExperience.swift', 'filteredEvents'),
+            'spoiler notifications': ('Sources/Views/V2MatchExperience.swift', 'V2FeaturePreferences.spoilerMode'),
+            'pinned priority': ('Sources/Views/V2HomeView.swift', 'PinnedMatchStore.contains(match.id) ? -100'),
           }
           missing=[]
           for name,(path,needle) in checks.items():
