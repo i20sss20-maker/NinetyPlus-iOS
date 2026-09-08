@@ -26,17 +26,27 @@ jobs:
           python3 scripts/apply_v2_200_features.py
       - name: Verify 200-feature wiring
         run: |
-          grep -q 'V2200FeatureCenterView' Sources/Views/V2Personalization.swift
-          grep -q 'PinnedMatchStore' Sources/Views/V2MatchExperience.swift
-          grep -q 'متابعاتي' Sources/Views/V2MatchExperience.swift
-          grep -q 'مثبتة' Sources/Views/V2MatchExperience.swift
-          grep -q 'V2FeaturePreferences.oledBlack' Sources/Core/Core.swift
-          grep -q 'MatchReminderScheduler' Sources/Views/V2MatchExperience.swift
+          python3 - <<'PY'
+          from pathlib import Path
+          checks = {
+            'feature center': ('Sources/Views/V2Personalization.swift', 'V2200FeatureCenterView'),
+            'pinning': ('Sources/Views/V2MatchExperience.swift', 'PinnedMatchStore'),
+            'followed filter': ('Sources/Views/V2MatchExperience.swift', 'متابعاتي'),
+            'pinned filter': ('Sources/Views/V2MatchExperience.swift', 'مثبتة'),
+            'oled runtime': ('Sources/Core/Core.swift', 'V2FeaturePreferences.oledBlack'),
+            'reminders': ('Sources/Views/V2MatchExperience.swift', 'MatchReminderScheduler'),
+          }
+          missing=[]
+          for name,(path,needle) in checks.items():
+              ok=needle in Path(path).read_text(encoding='utf-8')
+              print(f'{name}: {"OK" if ok else "MISSING"}')
+              if not ok: missing.append(name)
+          if missing: raise SystemExit('missing wiring: '+', '.join(missing))
+          PY
       - name: Hygiene
         run: python3 scripts/audit_commercial_hygiene.py
       - name: Core tests
         run: |
-          swiftc -parse-as-library Sources/Core/EnglishDigits.swift /tmp/digits.swift -o /tmp/digits-test 2>/dev/null || true
           swiftc -swift-version 5 -parse-as-library Sources/Core/PageResource.swift Sources/Core/MatchCenterProgress.swift Tests/MatchCenterProgressTests.swift -o /tmp/match-tests
           /tmp/match-tests
       - name: Install XcodeGen
