@@ -6,7 +6,7 @@ struct V2ContentRoute: Hashable, Identifiable {
     let kind: Kind
     let identifier: String
     let kickoff: Date?
-    var id: String { "\(kind.rawValue)|\(identifier)|\(kickoff?.timeIntervalSince1970 ?? 0)" }
+    var id: String { "\(kind.rawValue)|\(identifier)|\(kickoff.map { String($0.timeIntervalSince1970) } ?? "none")" }
 
     init?(kind: Kind, identifier: String, kickoff: Date? = nil) {
         guard identifier.count <= 240, !identifier.isEmpty else { return nil }

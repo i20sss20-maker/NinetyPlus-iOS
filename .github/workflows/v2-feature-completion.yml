@@ -1,21 +1,12 @@
 name: V2 feature completion validation
 on:
   workflow_dispatch:
-  pull_request:
-    paths:
-      - 'Sources/Core/V2FeatureModels.swift'
-      - 'Sources/Views/V2SavedLineupsView.swift'
-      - 'Sources/Views/V2PlayerStatsComparisonView.swift'
-      - 'Sources/Views/V2LinkedDestinationView.swift'
-      - 'scripts/v2_feature_completion.py'
-      - 'scripts/test_v2_feature_completion.py'
-      - 'scripts/apply_v2_final_polish.py'
-      - 'Tests/V2FeatureModelsTests.swift'
-      - '.github/workflows/v2-feature-completion.yml'
+  push:
+    branches: [feat/v2-feature-completion]
 permissions:
   contents: read
 concurrency:
-  group: v2-completion-${{ github.event.pull_request.number || github.ref }}
+  group: v2-completion-${{ github.ref }}
   cancel-in-progress: true
 jobs:
   integrated:
@@ -23,10 +14,11 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-      - name: Test feature models and Match Center recovery
+      - name: Test feature models, comparison and Match Center recovery
         run: |
           swiftc -swift-version 5 -parse-as-library Sources/Core/V2FeatureModels.swift Tests/V2FeatureModelsTests.swift -o /tmp/v2-feature-tests
           /tmp/v2-feature-tests
+          python3 scripts/test_v2_comparison.py
           python3 scripts/test_match_center_recovery.py
       - name: Apply the same complete release transformation chain
         run: |

@@ -21,6 +21,7 @@ import Foundation
         check(V2ContentRoute(kind: .match, identifier: "np:") == nil, "empty namespace suffix")
         check(V2ContentRoute(kind: .match, identifier: "np:a b") == nil, "space in ID")
         check(V2ContentRoute(kind: .match, identifier: String(repeating: "a", count: 241)) == nil, "oversized ID")
+        check(V2ContentRoute(kind: .match, identifier: "1")!.id != V2ContentRoute(kind: .match, identifier: "1", kickoff: Date(timeIntervalSince1970: 0))!.id, "unknown and epoch kickoff have distinct presentation identities")
         var library = V2LineupLibrary()
         check(try V2LineupLibrary.decode("").drafts.isEmpty, "new empty library")
         var draft = V2LineupDraft()

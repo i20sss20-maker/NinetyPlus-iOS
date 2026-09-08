@@ -13,11 +13,15 @@ import SwiftUI
         return stats.value?.first { $0.id == selectedStatID }
     }
     func edit(_ text: String) {
-        guard text != query else { return }
+        let normalized = String(text.prefix(100))
+        guard normalized != query else { return }
         results = PageResource(); stats = PageResource(); player = nil; selectedStatID = ""
-        query = String(text.prefix(100))
+        query = normalized
     }
     func choose(_ value: APIPlusPlayer?) {
+        // Choosing the same ID does not restart SwiftUI's ID-keyed stats task.
+        // Preserve its value and in-flight token instead of leaving an empty pane.
+        if let value, player?.id == value.id { player = value; return }
         results = PageResource(); stats = PageResource(); selectedStatID = ""
         player = value; query = value?.name ?? ""
     }
