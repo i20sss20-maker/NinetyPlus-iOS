@@ -82,3 +82,7 @@ s = apply_match_center_recovery(s)
 write(p, s)
 
 print('Applied 90+ 2.0 final polish: Latin numerals, recent searches, in-app transfer reading and partial Match Center fallback')
+
+# Keep the standard IPA and visual builds on the same feature integration path.
+from v2_feature_completion import apply_features
+apply_features(ROOT)

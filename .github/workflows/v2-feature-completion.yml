@@ -1,0 +1,83 @@
+name: V2 feature completion validation
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'Sources/Core/V2FeatureModels.swift'
+      - 'Sources/Views/V2SavedLineupsView.swift'
+      - 'Sources/Views/V2PlayerStatsComparisonView.swift'
+      - 'Sources/Views/V2LinkedDestinationView.swift'
+      - 'scripts/v2_feature_completion.py'
+      - 'scripts/test_v2_feature_completion.py'
+      - 'scripts/apply_v2_final_polish.py'
+      - 'Tests/V2FeatureModelsTests.swift'
+      - '.github/workflows/v2-feature-completion.yml'
+permissions:
+  contents: read
+concurrency:
+  group: v2-completion-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  integrated:
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test feature models and Match Center recovery
+        run: |
+          swiftc -swift-version 5 -parse-as-library Sources/Core/V2FeatureModels.swift Tests/V2FeatureModelsTests.swift -o /tmp/v2-feature-tests
+          /tmp/v2-feature-tests
+          python3 scripts/test_match_center_recovery.py
+      - name: Apply the same complete release transformation chain
+        run: |
+          python3 scripts/apply_release_ui_fixes.py
+          python3 scripts/apply_match_metadata_fixes.py
+          python3 scripts/apply_lineup_ui_fixes.py
+          python3 scripts/apply_search_resilience_fixes.py
+          python3 scripts/apply_canonical_reindex_fixes.py
+          python3 scripts/apply_navigation_reliability_fixes.py
+          python3 scripts/apply_popular_app_ux_fixes.py
+          python3 scripts/apply_data_resilience_fixes.py
+          python3 scripts/apply_build100_product_polish.py
+          python3 scripts/apply_v2_all_at_once.py
+          python3 scripts/apply_v2_final_polish.py
+          python3 scripts/test_v2_feature_completion.py
+          python3 scripts/audit_commercial_hygiene.py
+      - name: Generate Xcode project
+        run: |
+          brew install xcodegen
+          swift scripts/generate_app_icon.swift
+          xcodegen generate
+      - name: Build unsigned iPhone app
+        run: |
+          set -o pipefail
+          mkdir -p evidence
+          xcodebuild build -project NinetyPlus.xcodeproj -scheme NinetyPlus -configuration Release -destination 'generic/platform=iOS' -derivedDataPath feature-build CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO 2>&1 | tee evidence/device-build.log
+      - name: Compile iPhone simulator app and UI tests
+        run: |
+          set -o pipefail
+          xcrun simctl list devices available -j > /tmp/v2-devices.json
+          SIMULATOR_ID=$(python3 -c 'import json; d=json.load(open("/tmp/v2-devices.json"))["devices"]; print(next(x["udid"] for runtime, values in d.items() if "iOS" in runtime for x in values if "iPhone" in x["name"]))')
+          xcodebuild build-for-testing -project NinetyPlus.xcodeproj -scheme NinetyPlus -configuration Debug -destination "id=$SIMULATOR_ID" -derivedDataPath feature-sim CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO 2>&1 | tee evidence/simulator-build.log
+      - name: Package unsigned preview IPA
+        run: |
+          mkdir -p Payload
+          cp -R feature-build/Build/Products/Release-iphoneos/NinetyPlus.app Payload/
+          zip -qr NinetyPlus-2.0-feature-preview-unsigned.ipa Payload
+          shasum -a 256 NinetyPlus-2.0-feature-preview-unsigned.ipa > SHA256SUMS.txt
+          printf 'Commit: %s\nUnsigned development preview. Simulator tests were compiled, not executed.\n' "$GITHUB_SHA" > BUILD_INFO.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NinetyPlus-2.0-feature-preview-unsigned-IPA
+          path: |
+            NinetyPlus-2.0-feature-preview-unsigned.ipa
+            SHA256SUMS.txt
+            BUILD_INFO.txt
+          if-no-files-found: error
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: NinetyPlus-V2-feature-build-logs
+          path: evidence/*.log
+          retention-days: 7
