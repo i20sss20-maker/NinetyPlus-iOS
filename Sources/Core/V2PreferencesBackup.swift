@@ -10,23 +10,24 @@ struct V2PreferencesSnapshot: Codable, Equatable {
 
 enum V2PreferencesBackup {
     static let schemaVersion = 1
+    static let reminderLeadKey = "v2.reminderLeadMinutes"
 
     static let booleanKeys = [
-        V2FeaturePreferences.oledBlack,
-        V2FeaturePreferences.compactMatches,
-        V2FeaturePreferences.haptics,
-        V2FeaturePreferences.spoilerMode,
-        V2FeaturePreferences.lowDataMode,
-        V2FeaturePreferences.liveOnly,
-        V2FeaturePreferences.followedOnly,
-        V2FeaturePreferences.pinnedOnly,
-        V2FeaturePreferences.notifyGoals,
-        V2FeaturePreferences.notifyKickoff,
-        V2FeaturePreferences.notifyLineups,
-        V2FeaturePreferences.notifyRedCards
+        "v2.oledBlack",
+        "v2.compactMatches",
+        "v2.haptics",
+        "v2.spoilerMode",
+        "v2.lowDataMode",
+        "v2.liveOnly",
+        "v2.followedOnly",
+        "v2.pinnedOnly",
+        "v2.notifyGoals",
+        "v2.notifyKickoff",
+        "v2.notifyLineups",
+        "v2.notifyRedCards"
     ]
 
-    static let integerKeys = [V2FeaturePreferences.reminderLeadMinutes]
+    static let integerKeys = [reminderLeadKey]
 
     static let stringKeys = [
         "favoriteTeamIDs",
@@ -86,7 +87,7 @@ enum V2PreferencesBackup {
               Set(value.integers.keys).isSubset(of: Set(integerKeys)),
               Set(value.strings.keys).isSubset(of: Set(stringKeys)) else { throw BackupError.unknownKey }
 
-        if let lead = value.integers[V2FeaturePreferences.reminderLeadMinutes], !(5...120).contains(lead) {
+        if let lead = value.integers[reminderLeadKey], !(5...120).contains(lead) {
             throw BackupError.invalidValue
         }
         guard value.strings.values.allSatisfy({ $0.count <= 20_000 }) else { throw BackupError.invalidValue }
