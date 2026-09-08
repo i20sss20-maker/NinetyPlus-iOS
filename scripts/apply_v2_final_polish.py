@@ -1,4 +1,5 @@
 from pathlib import Path
+from match_center_recovery import apply_match_center_recovery
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -77,27 +78,11 @@ write(p, s)
 # a page-level fixture error. Only detail sections keep their own retry state.
 p = 'Sources/Views/V2MatchExperience.swift'
 s = read(p)
-old = '''        } catch {
-            guard !Task.isCancelled, !(error is CancellationError), progress.matchID == match.id else { return }
-            for (section, token) in tokens { progress.fail(section, token: token, message: error.localizedDescription) }
-        }
-    }
-'''
-new = '''        } catch {
-            guard !Task.isCancelled, !(error is CancellationError), progress.matchID == match.id else { return }
-            if let token = tokens[.fixture] {
-                _ = progress.succeed(.fixture, token: token, hasContent: true)
-            }
-            for (section, token) in tokens where section != .fixture {
-                progress.fail(section, token: token, message: error.localizedDescription)
-            }
-        }
-    }
-'''
-if old in s:
-    s = s.replace(old, new, 1)
-elif new not in s:
-    raise RuntimeError('canonical match center catch marker missing')
+s = apply_match_center_recovery(s)
 write(p, s)
 
 print('Applied 90+ 2.0 final polish: Latin numerals, recent searches, in-app transfer reading and partial Match Center fallback')
+
+# Keep the standard IPA and visual builds on the same feature integration path.
+from v2_feature_completion import apply_features
+apply_features(ROOT)
