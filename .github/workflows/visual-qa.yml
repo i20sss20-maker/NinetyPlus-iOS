@@ -55,7 +55,7 @@ jobs:
           cat evidence/production-match-detail.json
       - name: Test actual current-season table and identifiers
         run: |
-          swiftc -swift-version 5 -parse-as-library Sources/Core/PublicLeagueTable.swift Tests/PublicSourceTests.swift -o /tmp/public-tests
+          swiftc -swift-version 5 -parse-as-library Sources/Core/EnglishDigits.swift Sources/Core/PublicLeagueTable.swift Tests/PublicSourceTests.swift -o /tmp/public-tests
           if [ -s evidence/public-table.json ]; then /tmp/public-tests evidence/public-table.json; else /tmp/public-tests; fi
       - name: Upload source diagnostics early
         uses: actions/upload-artifact@v4
