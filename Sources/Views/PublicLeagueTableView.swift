@@ -24,6 +24,7 @@ struct PublicLeagueTableView: View {
                     if table.children.count > 1 {
                         Text(group.name ?? "المجموعة").font(.headline).frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 18)
                     }
+                    if !teamsOnly { raceCards(group.standings.entries) }
                     if !teamsOnly { tableHeader }
                     LazyVStack(spacing: 0) {
                         ForEach(group.standings.entries) { entry in
@@ -61,6 +62,48 @@ struct PublicLeagueTableView: View {
         .task(id: "\(code):\(retry):\(refreshID)") { await load() }
         .onDisappear { resource.invalidate() }
     }
+
+    @ViewBuilder private func raceCards(_ entries: [PublicLeagueTable.Entry]) -> some View {
+        let ordered = entries.sorted { rankValue($0) < rankValue($1) }
+        if ordered.count >= 3 {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("صراع البطولة").font(.headline).foregroundStyle(.white)
+                HStack(spacing: 10) {
+                    raceCard("القمة", entries: Array(ordered.prefix(3)), icon: "trophy.fill")
+                    if ordered.count >= 6 {
+                        raceCard("آخر المراكز", entries: Array(ordered.suffix(3)), icon: "arrow.down.right.circle.fill")
+                    }
+                }
+                Text("البطاقات تعرض الترتيب والنقاط المنشورة فقط، بدون توقعات.")
+                    .font(.caption2).foregroundStyle(AppTheme.muted)
+            }
+            .padding(.horizontal, 16)
+            .accessibilityIdentifier("league.raceCards")
+        }
+    }
+
+    private func raceCard(_ title: String, entries: [PublicLeagueTable.Entry], icon: String) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            Label(title, systemImage: icon).font(.caption.bold()).foregroundStyle(AppTheme.green)
+            ForEach(entries) { entry in
+                HStack(spacing: 6) {
+                    Text(entry.display("rank")).font(.caption2.bold()).foregroundStyle(AppTheme.muted).frame(width: 18)
+                    Text(SportsArabic.team(entry.team.displayName)).font(.caption.bold()).lineLimit(1)
+                    Spacer(minLength: 4)
+                    Text(entry.display("points")).font(.caption.bold()).foregroundStyle(.white).monospacedDigit()
+                }
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(AppTheme.card, in: RoundedRectangle(cornerRadius: 16))
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(AppTheme.border))
+    }
+
+    private func rankValue(_ entry: PublicLeagueTable.Entry) -> Int {
+        Int(entry.display("rank")) ?? Int.max
+    }
+
     private func sourceHeader(_ table: PublicLeagueTable) -> some View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 5) {
