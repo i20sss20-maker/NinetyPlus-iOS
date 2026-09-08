@@ -56,6 +56,9 @@ jobs:
             'root deep link wiring': ('Sources/Views/RootView.swift', '.onOpenURL'),
             'data health center': ('Sources/Views/V2DataHealthView.swift', 'data.healthCenter'),
             'data health entry': ('Sources/Views/V2200FeatureCenter.swift', 'V2DataHealthView()'),
+            'backend live probe': ('Sources/Views/V2DataHealthView.swift', 'APIFootballClient.health()'),
+            'public source probe': ('Sources/Views/V2DataHealthView.swift', 'ksa.1/standings'),
+            'provider budget state': ('Sources/Views/V2DataHealthView.swift', 'providerBudgetRemaining'),
           }
           missing=[]
           for name,(path,needle) in checks.items():
