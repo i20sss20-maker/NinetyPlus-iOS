@@ -28,6 +28,7 @@ jobs:
           python3 scripts/apply_v2_200_features_3.py
           python3 scripts/apply_v2_200_batch5.py
           python3 scripts/apply_v2_200_batch7.py
+          python3 scripts/apply_v2_200_batch8.py
       - name: Verify 200-feature wiring
         run: |
           python3 - <<'PY'
@@ -64,6 +65,9 @@ jobs:
             'preferences backup view': ('Sources/Views/V2PreferencesBackupView.swift', 'settings.backupRestore'),
             'preferences backup entry': ('Sources/Views/V2200FeatureCenter.swift', 'V2PreferencesBackupView()'),
             'backup whitelist': ('Sources/Core/V2PreferencesBackup.swift', 'stringKeys'),
+            'reminder center': ('Sources/Views/V2ReminderCenterView.swift', 'reminders.center'),
+            'reminder center entry': ('Sources/Views/V2200FeatureCenter.swift', 'V2ReminderCenterView()'),
+            'reminder cancellation': ('Sources/Views/V2ReminderCenterView.swift', 'removePendingNotificationRequests'),
           }
           missing=[]
           for name,(path,needle) in checks.items():
