@@ -36,10 +36,37 @@ enum V2Permissions {
 
     static func requestCalendarAccess() async -> Bool {
         let store = EKEventStore()
-        if #available(iOS 17.0, *) {
-            return (try? await store.requestWriteOnlyAccessToEvents()) ?? false
-        }
+        if #available(iOS 17.0, *) { return (try? await store.requestWriteOnlyAccessToEvents()) ?? false }
         return false
+    }
+}
+
+@MainActor
+enum V2Calendar {
+    static func addMatch(home: String, away: String, kickoff: Date?) async -> Bool {
+        guard let kickoff else { return false }
+        let store = EKEventStore()
+        let granted: Bool
+        if #available(iOS 17.0, *) { granted = (try? await store.requestWriteOnlyAccessToEvents()) ?? false }
+        else { granted = false }
+        guard granted, let calendar = store.defaultCalendarForNewEvents else { return false }
+        let event = EKEvent(eventStore: store)
+        event.title = "\(SportsArabic.team(home)) × \(SportsArabic.team(away)) — 90+"
+        event.startDate = kickoff
+        event.endDate = kickoff.addingTimeInterval(2 * 60 * 60)
+        event.calendar = calendar
+        event.alarms = [EKAlarm(relativeOffset: -30 * 60)]
+        do { try store.save(event, span: .thisEvent); return true } catch { return false }
+    }
+}
+
+enum V2Share {
+    static func match(_ match: APIPlusMatch) -> String {
+        let score: String
+        if let h = match.homeScore, let a = match.awayScore, !FixturePhase.isUpcoming(match.status) { score = " \(h) - \(a)" }
+        else { score = "" }
+        let link = V2DeepLink.match(match.id)?.absoluteString ?? ""
+        return "90+ | \(SportsArabic.team(match.home))\(score) \(SportsArabic.team(match.away))\n\(SportsArabic.league(match.league))\n\(link)".englishDigits
     }
 }
 
