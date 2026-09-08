@@ -3,7 +3,7 @@ name: iPhone visual and live-service QA
 on:
   workflow_dispatch:
   push:
-    branches: [main, v2-all-at-once]
+    branches: [main, v2-all-at-once, fix/match-center-canonical-v2]
     paths: ['Sources/**', 'Shared/**', 'Widgets/**', 'UITests/**', 'Tests/**', 'project.yml', '.github/workflows/visual-qa.yml', 'scripts/**']
 concurrency:
   group: visual-qa-${{ github.ref }}

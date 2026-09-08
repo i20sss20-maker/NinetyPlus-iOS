@@ -3,7 +3,7 @@ name: Build unsigned IPA
 on:
   workflow_dispatch:
   push:
-    branches: [main, v2-all-at-once]
+    branches: [main, v2-all-at-once, fix/match-center-canonical-v2]
     paths-ignore:
       - 'backend/**'
 
