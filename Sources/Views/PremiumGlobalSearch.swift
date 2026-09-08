@@ -44,7 +44,7 @@ struct PremiumGlobalSearch: View {
     private var entered: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
     private var leagues: [LeagueOption] {
         guard entered.count >= 2 else { return [] }
-        return LeagueOption.featured.filter { [SportsArabic.league($0.name), $0.name].contains { $0.localizedCaseInsensitiveContains(entered) } }
+        return LeagueOption.featured.filter { [$0.arabicName, $0.englishName].contains { $0.localizedCaseInsensitiveContains(entered) } }
     }
     private var matches: [PulseFixture] {
         guard entered.count >= 2 else { return [] }
@@ -111,7 +111,7 @@ struct PremiumGlobalSearch: View {
         if !leagues.isEmpty {
             header("البطولات", count: leagues.count)
             ForEach(leagues) { league in
-                NavigationLink { V2LeagueHubView(league: league) } label: { resultRow(SportsArabic.league(league.name), subtitle: "بطولة", icon: "trophy.fill") }.buttonStyle(.plain)
+                NavigationLink { V2LeagueHubView(league: league) } label: { resultRow(league.arabicName, subtitle: league.englishName, icon: "trophy.fill") }.buttonStyle(.plain)
             }
         }
     }
