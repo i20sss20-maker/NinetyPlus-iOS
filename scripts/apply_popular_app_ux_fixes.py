@@ -79,8 +79,21 @@ if marker in s:
         .background(AppTheme.card, in: RoundedRectangle(cornerRadius: 18))''',1)
 write(path,s)
 
-# Add the matches-hub interaction test. Keep league and match checks independent so
-# UI automation does not depend on a particular NavigationStack back-button shape.
+# Give league destinations a stable automation hook independent of localized copy.
+path='Sources/Views/V2LeagueHub.swift'
+s=read(path)
+if 'accessibilityIdentifier("league.hub.' not in s:
+    marker='''        .background(AppTheme.bg.ignoresSafeArea())
+        .navigationTitle(league.arabicName)'''
+    replacement='''        .background(AppTheme.bg.ignoresSafeArea())
+        .accessibilityIdentifier("league.hub.\\(league.apiFootballID)")
+        .navigationTitle(league.arabicName)'''
+    if marker not in s: raise RuntimeError('league hub accessibility marker missing')
+    s=s.replace(marker,replacement,1)
+write(path,s)
+
+# Add the matches-hub interaction test. Select only an actually hittable league
+# header so XCUI does not synthesize a tap behind the bottom tab bar.
 path='UITests/ArabicJourneyTests.swift'
 s=read(path)
 if 'testMatchesHubInteractionPattern' not in s:
@@ -95,26 +108,35 @@ if 'testMatchesHubInteractionPattern' not in s:
         XCTAssertTrue(app.tabBars.buttons["المباريات"].waitForExistence(timeout: 20))
         app.tabBars.buttons["المباريات"].tap()
         XCTAssertTrue(app.buttons["متابعاتي"].waitForExistence(timeout: 10))
-        let league = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "matches.league.")).firstMatch
-        if league.waitForExistence(timeout: 20) {
-            if !league.isHittable { app.swipeUp() }
-            league.tap()
-            XCTAssertTrue(app.staticTexts["الترتيب والنتائج وأندية البطولة"].waitForExistence(timeout: 12))
+        let leagues = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "matches.league."))
+        XCTAssertTrue(leagues.firstMatch.waitForExistence(timeout: 20))
+        var visibleLeague = leagues.allElementsBoundByIndex.first(where: { $0.isHittable })
+        for _ in 0..<4 where visibleLeague == nil {
+            app.swipeUp()
+            visibleLeague = leagues.allElementsBoundByIndex.first(where: { $0.isHittable })
         }
+        guard let league = visibleLeague else { return XCTFail("No hittable league header found") }
+        league.tap()
+        let leagueHub = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@", "league.hub.")).firstMatch
+        XCTAssertTrue(leagueHub.waitForExistence(timeout: 12))
 
         app.terminate()
         app.launch()
         XCTAssertTrue(app.tabBars.buttons["المباريات"].waitForExistence(timeout: 20))
         app.tabBars.buttons["المباريات"].tap()
-        let match = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "matches.match.")).firstMatch
-        if match.waitForExistence(timeout: 20) {
-            if !match.isHittable { app.swipeUp() }
-            match.tap()
-            XCTAssertTrue(app.buttons["match.follow"].waitForExistence(timeout: 12))
-            XCTAssertTrue(app.staticTexts["نظرة عامة"].exists || app.buttons["نظرة عامة"].exists)
-            XCTAssertTrue(app.staticTexts["الإحصائيات"].exists || app.buttons["الإحصائيات"].exists)
-            XCTAssertTrue(app.staticTexts["التشكيلة"].exists || app.buttons["التشكيلة"].exists)
+        let matches = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "matches.match."))
+        XCTAssertTrue(matches.firstMatch.waitForExistence(timeout: 20))
+        var visibleMatch = matches.allElementsBoundByIndex.first(where: { $0.isHittable })
+        for _ in 0..<4 where visibleMatch == nil {
+            app.swipeUp()
+            visibleMatch = matches.allElementsBoundByIndex.first(where: { $0.isHittable })
         }
+        guard let match = visibleMatch else { return XCTFail("No hittable match card found") }
+        match.tap()
+        XCTAssertTrue(app.buttons["match.follow"].waitForExistence(timeout: 12))
+        XCTAssertTrue(app.staticTexts["نظرة عامة"].exists || app.buttons["نظرة عامة"].exists)
+        XCTAssertTrue(app.staticTexts["الإحصائيات"].exists || app.buttons["الإحصائيات"].exists)
+        XCTAssertTrue(app.staticTexts["التشكيلة"].exists || app.buttons["التشكيلة"].exists)
     }
 '''
     if marker not in s: raise RuntimeError('UI test insertion marker missing')
