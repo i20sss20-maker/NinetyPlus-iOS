@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 import UserNotifications
 
 @MainActor final class MatchReminderCenter: ObservableObject {
@@ -25,8 +26,7 @@ import UserNotifications
         do {
             let granted = try await center.requestAuthorization(options: [.alert, .sound, .badge])
             guard granted else { message = "التنبيهات غير مسموحة لهذا التطبيق من إعدادات iOS."; return }
-            var calendar = SportsDisplayDate.calendar
-            calendar.timeZone = SportsDisplayDate.calendar.timeZone
+            let calendar = SportsDisplayDate.calendar
             let components = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: fire)
             let content = UNMutableNotificationContent()
             content.title = "مباراة بعد \(minutesBefore) دقيقة"
