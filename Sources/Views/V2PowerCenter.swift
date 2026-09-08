@@ -56,6 +56,9 @@ struct V2PowerSettingsView: View {
                 Toggle("الرئيسية حسب متابعاتي", isOn: $favoriteHomeMode)
                 Toggle("اهتزازات خفيفة", isOn: $haptics)
                 LabeledContent("الأرقام") { Text("0–9").monospacedDigit() }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("الأرقام الإنجليزية 0–9")
+                    .accessibilityIdentifier("settings.digits")
             }
             Section("الأداء") {
                 Toggle("Low Data Mode", isOn: $lowDataMode)
