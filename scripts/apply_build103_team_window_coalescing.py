@@ -149,3 +149,7 @@ new_team = '''    func teamFixtures(teamID: String, teamName: String? = nil, nex
 s = replace_once(s, old_team, new_team, "coalesced team window")
 store.write_text(s, encoding="utf-8")
 print("Build 103 coalesced team window applied")
+
+next_patch = Path("scripts/apply_build104_server_window_fallback.py")
+if next_patch.exists():
+    exec(compile(next_patch.read_text(encoding="utf-8"), str(next_patch), "exec"), {"__name__": "__main__"})
