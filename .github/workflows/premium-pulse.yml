@@ -1,0 +1,97 @@
+name: Premium Pulse build and iPhone smoke tests
+on:
+  workflow_dispatch:
+  push:
+    branches: [feat/premium-pulse]
+permissions:
+  contents: read
+concurrency:
+  group: premium-pulse-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  premium:
+    runs-on: macos-15
+    timeout-minutes: 28
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run deterministic domain and existing recovery tests
+        run: |
+          set -euo pipefail
+          mkdir -p evidence
+          swiftc -swift-version 5 -parse-as-library Sources/Core/PremiumFootballModels.swift Tests/PremiumFootballTests.swift -o /tmp/premium-tests
+          /tmp/premium-tests | tee evidence/premium-domain.txt
+          swiftc -swift-version 5 -parse-as-library Sources/Core/V2FeatureModels.swift Tests/V2FeatureModelsTests.swift -o /tmp/feature-tests
+          /tmp/feature-tests
+          python3 scripts/test_v2_comparison.py
+          python3 scripts/test_match_center_recovery.py
+      - name: Run the complete distributable source pipeline
+        run: |
+          set -euo pipefail
+          python3 scripts/apply_release_ui_fixes.py
+          python3 scripts/apply_match_metadata_fixes.py
+          python3 scripts/apply_lineup_ui_fixes.py
+          python3 scripts/apply_search_resilience_fixes.py
+          python3 scripts/apply_canonical_reindex_fixes.py
+          python3 scripts/apply_navigation_reliability_fixes.py
+          python3 scripts/apply_popular_app_ux_fixes.py
+          python3 scripts/apply_data_resilience_fixes.py
+          python3 scripts/apply_build100_product_polish.py
+          python3 scripts/apply_v2_all_at_once.py
+          python3 scripts/apply_v2_final_polish.py
+          python3 scripts/test_v2_feature_completion.py
+          python3 scripts/test_premium_integration.py
+          python3 scripts/audit_commercial_hygiene.py
+          swiftc -swift-version 5 -parse-as-library Sources/Core/V2FeatureModels.swift Tests/PremiumLineupMigrationTests.swift -o /tmp/lineup-migration
+          /tmp/lineup-migration
+      - name: Generate Xcode project
+        run: |
+          brew install xcodegen
+          swift scripts/generate_app_icon.swift
+          xcodegen generate
+      - name: Build iPhone release
+        run: |
+          set -o pipefail
+          xcodebuild build -project NinetyPlus.xcodeproj -scheme NinetyPlus -configuration Release -destination 'generic/platform=iOS' -derivedDataPath premium-build CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO 2>&1 | tee evidence/iphone-build.log
+      - name: Select simulator
+        run: |
+          xcrun simctl list devices available -j > /tmp/devices.json
+          python3 - <<'PY' >> "$GITHUB_ENV"
+          import json
+          devices=json.load(open('/tmp/devices.json'))['devices']
+          choices=[d for r, values in devices.items() if 'iOS-18' in r for d in values if 'iPhone' in d['name']]
+          if not choices: choices=[d for r, values in devices.items() if 'iOS' in r for d in values if 'iPhone' in d['name']]
+          chosen=next((d for d in choices if d['name']=='iPhone 16 Pro'), choices[0])
+          print('SIMULATOR_ID='+chosen['udid'])
+          PY
+      - name: Build iPhone simulator tests
+        run: |
+          set -o pipefail
+          xcodebuild build-for-testing -project NinetyPlus.xcodeproj -scheme NinetyPlus -configuration Debug -destination "id=$SIMULATOR_ID" -derivedDataPath premium-sim CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO 2>&1 | tee evidence/simulator-build.log
+      - name: Execute premium navigation and persistence smoke tests
+        run: |
+          set -o pipefail
+          xcrun simctl boot "$SIMULATOR_ID" || true
+          xcrun simctl bootstatus "$SIMULATOR_ID" -b
+          xcodebuild test-without-building -project NinetyPlus.xcodeproj -scheme NinetyPlus -configuration Debug -destination "id=$SIMULATOR_ID" -derivedDataPath premium-sim -resultBundlePath evidence/PremiumSmoke.xcresult -only-testing:NinetyPlusUITests/PremiumSmokeTests -parallel-testing-enabled NO CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO 2>&1 | tee evidence/ui-smoke.log
+      - name: Package unsigned premium preview
+        run: |
+          mkdir -p Payload
+          cp -R premium-build/Build/Products/Release-iphoneos/NinetyPlus.app Payload/
+          zip -qr NinetyPlus-Premium-Pulse-unsigned.ipa Payload
+          shasum -a 256 NinetyPlus-Premium-Pulse-unsigned.ipa > SHA256SUMS.txt
+          printf 'Commit: %s\nUnsigned preview, not TestFlight. UI smoke tests are limited to navigation and lineup persistence.\n' "$GITHUB_SHA" > BUILD_INFO.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NinetyPlus-Premium-Pulse-unsigned-IPA
+          path: |
+            NinetyPlus-Premium-Pulse-unsigned.ipa
+            SHA256SUMS.txt
+            BUILD_INFO.txt
+          if-no-files-found: error
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: NinetyPlus-Premium-Pulse-QA
+          path: evidence/
+          retention-days: 7

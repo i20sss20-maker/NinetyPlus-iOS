@@ -1,0 +1,39 @@
+name: Match Center recovery regressions
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, fix/match-center-recovery-v2]
+    paths:
+      - 'Sources/Core/PageResource.swift'
+      - 'Sources/Core/MatchCenterProgress.swift'
+      - 'scripts/apply_release_ui_fixes.py'
+      - 'scripts/apply_v2_final_polish.py'
+      - 'scripts/match_center_recovery.py'
+      - 'scripts/test_match_center_recovery.py'
+      - 'Tests/CanonicalRecoveryHarness.swift'
+      - '.github/workflows/match-center-recovery.yml'
+  pull_request:
+    paths:
+      - 'Sources/Core/PageResource.swift'
+      - 'Sources/Core/MatchCenterProgress.swift'
+      - 'scripts/apply_release_ui_fixes.py'
+      - 'scripts/apply_v2_final_polish.py'
+      - 'scripts/match_center_recovery.py'
+      - 'scripts/test_match_center_recovery.py'
+      - 'Tests/CanonicalRecoveryHarness.swift'
+      - '.github/workflows/match-center-recovery.yml'
+permissions:
+  contents: read
+concurrency:
+  group: match-recovery-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  regression:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test generated canonical loader and request ownership
+        run: |
+          swiftc --version
+          python3 scripts/test_match_center_recovery.py
