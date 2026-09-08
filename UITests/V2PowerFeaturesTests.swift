@@ -19,7 +19,9 @@ final class V2PowerFeaturesTests: XCTestCase {
         let settings = app.staticTexts["إعدادات 2.0"].firstMatch
         XCTAssertTrue(settings.waitForExistence(timeout: 8))
         settings.tap()
-        XCTAssertTrue(app.staticTexts["0–9"].waitForExistence(timeout: 8), "Arabic UI must advertise Latin digit policy")
+        let digitPolicy = app.descendants(matching: .any)["settings.digits"]
+        XCTAssertTrue(digitPolicy.waitForExistence(timeout: 8), "Arabic UI must expose the Latin digit policy through a stable accessibility marker")
+        XCTAssertTrue(digitPolicy.label.contains("0–9"), "Digit policy must explicitly display Latin digits 0–9")
         XCTAssertTrue(app.switches["إخفاء النتائج — Spoiler Mode"].exists)
         XCTAssertTrue(app.switches["Low Data Mode"].exists)
 
