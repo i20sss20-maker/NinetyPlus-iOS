@@ -18,6 +18,9 @@ struct RootView: View {
         .environment(\.calendar, SportsDisplayDate.calendar)
         .environment(\.timeZone, SportsDisplayDate.calendar.timeZone)
         .environment(\.layoutDirection, .rightToLeft)
+        .onOpenURL { url in
+            if let tab = V2DeepLinkRouter.tab(for: url) { selection = tab }
+        }
         .safeAreaInset(edge: .top, spacing: 0) {
             if !network.isOnline {
                 Label("لا يوجد اتصال بالإنترنت. نعرض آخر بيانات متاحة.", systemImage: "wifi.slash")
