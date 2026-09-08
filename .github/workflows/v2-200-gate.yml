@@ -27,6 +27,7 @@ jobs:
           python3 scripts/apply_v2_200_batch2.py
           python3 scripts/apply_v2_200_features_3.py
           python3 scripts/apply_v2_200_batch5.py
+          python3 scripts/apply_v2_200_batch7.py
       - name: Verify 200-feature wiring
         run: |
           python3 - <<'PY'
@@ -59,6 +60,10 @@ jobs:
             'backend live probe': ('Sources/Views/V2DataHealthView.swift', 'APIFootballClient.health()'),
             'public source probe': ('Sources/Views/V2DataHealthView.swift', 'ksa.1/standings'),
             'provider budget state': ('Sources/Views/V2DataHealthView.swift', 'providerBudgetRemaining'),
+            'preferences backup core': ('Sources/Core/V2PreferencesBackup.swift', 'V2PreferencesBackup'),
+            'preferences backup view': ('Sources/Views/V2PreferencesBackupView.swift', 'settings.backupRestore'),
+            'preferences backup entry': ('Sources/Views/V2200FeatureCenter.swift', 'V2PreferencesBackupView()'),
+            'backup whitelist': ('Sources/Core/V2PreferencesBackup.swift', 'stringKeys'),
           }
           missing=[]
           for name,(path,needle) in checks.items():
@@ -78,6 +83,8 @@ jobs:
           /tmp/match-tests
           swiftc -swift-version 5 Sources/Core/V2DeepLinkRouter.swift Tests/V2DeepLinkRouterTests.swift -o /tmp/deeplink-tests
           /tmp/deeplink-tests
+          swiftc -swift-version 5 Sources/Core/V2PreferencesBackup.swift Tests/V2PreferencesBackupTests.swift -o /tmp/backup-tests
+          /tmp/backup-tests
       - name: Install XcodeGen
         run: brew install xcodegen
       - name: Generate icon and project
