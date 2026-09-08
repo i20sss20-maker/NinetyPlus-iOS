@@ -33,8 +33,8 @@ final class ArabicJourneyTests: XCTestCase {
         app.tabBars.buttons["الرئيسية"].tap()
         XCTAssertTrue(app.buttons["home.search"].waitForExistence(timeout: 10))
         let league = app.buttons["home.league.307"]
-        XCTAssertTrue(league.waitForExistence(timeout: 10), "Saudi league shortcut must exist in the reordered home catalogue")
-        for _ in 0..<5 where !league.isHittable { app.swipeUp() }
+        for _ in 0..<7 where !league.exists || !league.isHittable { app.swipeUp() }
+        XCTAssertTrue(league.waitForExistence(timeout: 5), "Saudi league shortcut must exist in the reordered home catalogue")
         XCTAssertTrue(league.isHittable, "Saudi league shortcut must become hittable after scrolling the reordered home")
         league.tap()
         XCTAssertTrue(app.staticTexts["ترتيب الموسم الحالي"].waitForExistence(timeout: 25), "The current season must decode and pass its date validation")
