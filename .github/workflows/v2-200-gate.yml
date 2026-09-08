@@ -52,6 +52,8 @@ jobs:
             'standing insights': ('Sources/Views/PublicLeagueTableView.swift', 'league.standingInsights'),
             'leader points gap': ('Sources/Views/PublicLeagueTableView.swift', 'pointsGapToLeader'),
             'standing share': ('Sources/Views/PublicLeagueTableView.swift', 'standingShareText'),
+            'deep link router': ('Sources/Core/V2DeepLinkRouter.swift', 'V2DeepLinkRouter'),
+            'root deep link wiring': ('Sources/Views/RootView.swift', '.onOpenURL'),
           }
           missing=[]
           for name,(path,needle) in checks.items():
