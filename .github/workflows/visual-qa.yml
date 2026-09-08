@@ -32,6 +32,8 @@ jobs:
           grep -q 'accessibilityIdentifier("league.follow")' Sources/Views/V2LeagueHub.swift
           grep -q 'fallbackTeam' Sources/Views/V2LeagueHub.swift
           grep -q 'fallbackPlayer' Sources/Views/V2LeagueHub.swift
+      - name: Audit commercial source hygiene
+        run: python3 scripts/audit_commercial_hygiene.py
       - name: Test RSS images and dates
         run: |
           swiftc -swift-version 5 -parse-as-library Sources/Core/EditorialFeed.swift Tests/EditorialFeedTests.swift -o /tmp/editorial-tests

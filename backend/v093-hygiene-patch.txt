@@ -1,0 +1,39 @@
+// v0.9.3 — commercial runtime hygiene: bound long-lived maps without changing API semantics.
+replaceOnce(
+  "const clientWindows = new Map();\nconst canonicalMatchIndex = new Map();",
+  `const clientWindows = new Map();
+const CLIENT_WINDOW_LIMIT = 2048;
+const CANONICAL_INDEX_LIMIT = 5000;
+const canonicalMatchIndex = new Map();
+function pruneClientWindows(now=Date.now()) {
+  const cutoff=now-120000;
+  for (const [key,value] of clientWindows) if ((value?.startedAt || 0) < cutoff) clientWindows.delete(key);
+  while (clientWindows.size >= CLIENT_WINDOW_LIMIT) {
+    const oldest=clientWindows.keys().next().value; if (oldest === undefined) break; clientWindows.delete(oldest);
+  }
+}
+function rememberCanonicalMatch(id,match) {
+  if (!id) return;
+  if (canonicalMatchIndex.has(id)) canonicalMatchIndex.delete(id);
+  Map.prototype.set.call(canonicalMatchIndex,id,match);
+  while (canonicalMatchIndex.size > CANONICAL_INDEX_LIMIT) {
+    const oldest=canonicalMatchIndex.keys().next().value; if (oldest === undefined) break; canonicalMatchIndex.delete(oldest);
+  }
+}`,
+  'bounded runtime maps'
+);
+replaceOnce(
+  "function allowClient(req) {\n  const now = Date.now(); const key = clientAddress(req); const current = clientWindows.get(key);\n  if (!current || now - current.startedAt >= 60_000) { clientWindows.set(key,{startedAt:now,count:1}); return true; }\n  current.count += 1; return current.count <= RESPONSE_RATE_LIMIT;\n}",
+  "function allowClient(req) {\n  const now = Date.now(); const key = clientAddress(req); const current = clientWindows.get(key);\n  if (!current || now - current.startedAt >= 60_000) { if (clientWindows.size >= CLIENT_WINDOW_LIMIT) pruneClientWindows(now); clientWindows.set(key,{startedAt:now,count:1}); return true; }\n  current.count += 1; return current.count <= RESPONSE_RATE_LIMIT;\n}",
+  'rate limiter map cleanup'
+);
+// Route every canonical index write through the bounded helper, including writes
+// introduced by the later canonical-window transformations.
+s = s.replaceAll('canonicalMatchIndex.set(', 'rememberCanonicalMatch(');
+replaceOnce(
+  "providerRequestsToday,providerDailyBudget:PROVIDER_DAILY_BUDGET,providerRemoteBlocked,providerBudgetRemaining:providerBudgetRemaining(),time:new Date().toISOString()",
+  "providerRequestsToday,providerDailyBudget:PROVIDER_DAILY_BUDGET,providerRemoteBlocked,providerBudgetRemaining:providerBudgetRemaining(),rateLimitClients:clientWindows.size,canonicalIndexEntries:canonicalMatchIndex.size,time:new Date().toISOString()",
+  'health memory metrics'
+);
+s = s.replaceAll("version:'0.9.2'", "version:'0.9.3'");
+s = s.replaceAll('90+ backend v0.9.2 listening', '90+ backend v0.9.3 listening');
