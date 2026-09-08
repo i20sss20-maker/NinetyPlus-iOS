@@ -1,4 +1,4 @@
-# Release data contract: canonical backend v0.8.9 preserves complete match detail, including venue and referee metadata, with strict production QA.
+# Release data contract: canonical backend v0.8.9 with navigation reliability and in-app web presentation hardening.
 name: NinetyPlus
 options:
   bundleIdPrefix: com.ninetyplus
@@ -9,7 +9,7 @@ settings:
     SWIFT_VERSION: 5.10
     PRODUCT_BUNDLE_IDENTIFIER: com.ninetyplus.app
     MARKETING_VERSION: 1.0.0
-    CURRENT_PROJECT_VERSION: 95
+    CURRENT_PROJECT_VERSION: 96
 targets:
   NinetyPlus:
     type: application
