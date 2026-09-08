@@ -24,7 +24,7 @@ def fail(report, message):
 
 def get_json(path, params=None, timeout=20):
     query = ("?" + urlencode(params)) if params else ""
-    req = Request(BASE + path + query, headers={"User-Agent": "NinetyPlus-QA/1.6"})
+    req = Request(BASE + path + query, headers={"User-Agent": "NinetyPlus-QA/1.7"})
     with urlopen(req, timeout=timeout) as response:
         return response.status, json.load(response)
 
@@ -77,6 +77,22 @@ def lineup_summary(lineup):
 
 
 report = {"checkedAt": datetime.now(timezone.utc).isoformat(), "base": BASE, "days": []}
+health = {}
+try:
+    health_status, health_payload = get_json("/api/health")
+    if isinstance(health_payload, dict): health = health_payload
+    report["health"] = {"status": health_status, **health}
+except Exception as exc:
+    report["health"] = {"error": str(exc)}
+provider_quota_exhausted = (
+    health.get("providerBudgetRemaining") == 0
+    or (
+        isinstance(health.get("providerRequestsToday"), int)
+        and isinstance(health.get("providerDailyBudget"), int)
+        and health.get("providerRequestsToday") >= health.get("providerDailyBudget")
+    )
+)
+
 selected = None; selected_date = None
 for offset in range(0, 8):
     day = (datetime.now(timezone.utc) - timedelta(days=offset)).date().isoformat()
@@ -114,13 +130,14 @@ for row in detail.get("statistics") or []:
                            "statCount": len(stats)})
 venue = detail.get("venue") or {}
 officials = detail.get("officials") or []
+coach_coverage = sum(1 for x in lineup_summaries if x["coach"])
 report.update({"selectedDate": selected_date,
     "selectedMatch": {"id": match_id, "home": team_name(selected, "home"), "away": team_name(selected, "away"),
                       "status": status_code(selected), "sources": selected.get("sources") or [], "providerIds": selected.get("providerIds") or {},
                       "league": selected.get("league")},
     "detailStatus": status, "detailSeconds": detail_seconds, "maxDetailSeconds": MAX_DETAIL_SECONDS,
     "detail": {"events": len(detail.get("events") or []), "statistics": len(detail.get("statistics") or []), "lineups": len(lineups),
-               "lineupQuality": lineup_summaries, "coachCoverage": sum(1 for x in lineup_summaries if x["coach"]),
+               "lineupQuality": lineup_summaries, "coachCoverage": coach_coverage,
                "statisticsQuality": stat_summaries, "venue": venue, "officials": officials,
                "coverage": detail.get("coverage") or {}, "source": detail.get("source"), "meta": detail.get("meta") or {}}})
 save(report)
@@ -129,7 +146,12 @@ if detail_seconds > MAX_DETAIL_SECONDS: fail(report, f"match detail too slow: {d
 if len(lineup_summaries) < 2: fail(report, "both team lineups are required")
 if any(x["starters"] < 11 or x["namedPlayers"] < 11 for x in lineup_summaries): fail(report, "incomplete starting lineups")
 if any(x["substitutes"] < 1 for x in lineup_summaries): fail(report, "substitutes missing")
-if sum(1 for x in lineup_summaries if x["coach"]) < 2: fail(report, "both head coaches are required")
+if coach_coverage < 2:
+    if provider_quota_exhausted:
+        report["degraded"] = True
+        report["warning"] = "Head-coach enrichment is unavailable because the provider request budget is exhausted; core match detail remains verified."
+    else:
+        fail(report, "both head coaches are required")
 if len(stat_summaries) < 2 or any(x["statCount"] < 5 for x in stat_summaries): fail(report, "team statistics incomplete")
 if len(detail.get("events") or []) < 1: fail(report, "completed match has no events")
 if not isinstance(venue, dict) or not venue.get("name"): fail(report, "venue missing")
