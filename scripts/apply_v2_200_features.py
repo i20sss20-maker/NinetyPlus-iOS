@@ -14,13 +14,15 @@ s = s.replace('    static let bg = Color(red: 0.006, green: 0.024, blue: 0.031)\
 ''')
 write(p, s)
 
-# Product entry point for the expanded power features.
+# Product entry point. Use a broad stable anchor because earlier transforms may add cards.
 p = 'Sources/Views/V2Personalization.swift'
 s = read(p)
-needle = '                    NavigationLink { V2DiscoverView() } label: { card("البحث", "ابحث عن نادي أو لاعب", "magnifyingglass") }\n                    statusCard\n'
-replacement = '                    NavigationLink { V2DiscoverView() } label: { card("البحث", "ابحث عن نادي أو لاعب", "magnifyingglass") }\n                    NavigationLink { V2200FeatureCenterView() } label: { card("ميزات 90+ المتقدمة", "التثبيت، OLED، التنبيهات، كثافة العرض والمزيد", "sparkles") }\n                    statusCard\n'
-if needle in s and 'V2200FeatureCenterView()' not in s:
-    s = s.replace(needle, replacement, 1)
+if 'V2200FeatureCenterView()' not in s:
+    anchor = '                    statusCard\n'
+    entry = '                    NavigationLink { V2200FeatureCenterView() } label: { card("ميزات 90+ المتقدمة", "التثبيت، OLED، التنبيهات، كثافة العرض والمزيد", "sparkles") }\n'
+    if anchor not in s:
+        raise RuntimeError('200-feature center anchor missing')
+    s = s.replace(anchor, entry + anchor, 1)
 write(p, s)
 
 # Match list filters: live/upcoming/finished + followed + pinned.
@@ -39,34 +41,41 @@ if '@AppStorage("v2.pinnedMatchIDs")' not in s:
 ''', 1)
     s = s.replace('SegmentBar(items: ["الكل", "مباشر", "القادمة", "المنتهية"], selected: $filter)', 'SegmentBar(items: ["الكل", "مباشر", "القادمة", "المنتهية", "متابعاتي", "مثبتة"], selected: $filter)', 1)
 
-# Match-center pinning and reminder scheduling.
+# Match-center pinning and reminder scheduling. Use short stable anchors after all older transforms.
 if '@State private var pinRevision = 0' not in s:
-    s = s.replace('    @State private var permissionNotice: String?\n', '    @State private var permissionNotice: String?\n    @State private var pinRevision = 0\n    @State private var reminderBusy = false\n    @AppStorage(V2FeaturePreferences.reminderLeadMinutes) private var reminderLeadMinutes = 30\n', 1)
-    s = s.replace('    private var isFollowed: Bool { SavedFavoriteIDs.parse(followedMatchIDs).contains(match.id) }\n', '    private var isFollowed: Bool { SavedFavoriteIDs.parse(followedMatchIDs).contains(match.id) }\n    private var isPinned: Bool { _ = pinRevision; return PinnedMatchStore.contains(match.id) }\n', 1)
-    old = '''                Button { Task { await toggleFollow() } } label: {
-                    Label(isFollowed ? "متابَع" : "تابع المباراة", systemImage: isFollowed ? "bell.fill" : "bell")
-                        .font(.subheadline.bold())
-                        .foregroundStyle(isFollowed ? .black : .white)
-                        .padding(.horizontal, 15).padding(.vertical, 10)
-                        .background(isFollowed ? AppTheme.green : AppTheme.cardRaised, in: Capsule())
-                        .overlay(Capsule().stroke(isFollowed ? Color.clear : AppTheme.border, lineWidth: 1))
-                }.buttonStyle(.plain).disabled(followBusy)
-                Spacer()
-'''
-    new = old.replace('                Spacer()\n', '''                Button {
-                    _ = PinnedMatchStore.toggle(match.id); pinRevision += 1
+    state_anchor = '    @State private var permissionNotice: String?\n'
+    if state_anchor not in s: raise RuntimeError('match center state anchor missing')
+    s = s.replace(state_anchor, state_anchor + '    @State private var pinRevision = 0\n    @State private var reminderBusy = false\n    @AppStorage(V2FeaturePreferences.reminderLeadMinutes) private var reminderLeadMinutes = 30\n', 1)
+    follow_anchor = '    private var isFollowed: Bool { SavedFavoriteIDs.parse(followedMatchIDs).contains(match.id) }\n'
+    if follow_anchor not in s: raise RuntimeError('match center followed anchor missing')
+    s = s.replace(follow_anchor, follow_anchor + '    private var isPinned: Bool { _ = pinRevision; return PinnedMatchStore.contains(match.id) }\n', 1)
+
+if 'MatchReminderScheduler.schedule(match: displayMatch' not in s:
+    button_anchor = '                }.buttonStyle(.plain).disabled(followBusy)\n'
+    controls = '''                Button {
+                    _ = PinnedMatchStore.toggle(match.id)
+                    pinRevision += 1
                 } label: {
                     Image(systemName: isPinned ? "pin.fill" : "pin")
                         .foregroundStyle(isPinned ? .black : AppTheme.green)
                         .frame(width: 42, height: 42)
                         .background(isPinned ? AppTheme.green : AppTheme.cardRaised, in: Circle())
                         .overlay(Circle().stroke(isPinned ? Color.clear : AppTheme.border))
-                }.buttonStyle(.plain).accessibilityLabel(isPinned ? "إلغاء تثبيت المباراة" : "تثبيت المباراة")
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(isPinned ? "إلغاء تثبيت المباراة" : "تثبيت المباراة")
+
                 Button {
                     Task {
-                        reminderBusy = true; defer { reminderBusy = false }
-                        do { try await MatchReminderScheduler.schedule(match: displayMatch, leadMinutes: reminderLeadMinutes); permissionNotice = "تم ضبط تذكير قبل المباراة بـ \\(reminderLeadMinutes) دقيقة".englishDigits; V2Haptics.success() }
-                        catch { permissionNotice = "تعذر ضبط التذكير حاليًا" }
+                        reminderBusy = true
+                        defer { reminderBusy = false }
+                        do {
+                            try await MatchReminderScheduler.schedule(match: displayMatch, leadMinutes: reminderLeadMinutes)
+                            permissionNotice = "تم ضبط تذكير قبل المباراة بـ \\(reminderLeadMinutes) دقيقة".englishDigits
+                            V2Haptics.success()
+                        } catch {
+                            permissionNotice = "تعذر ضبط التذكير حاليًا"
+                        }
                     }
                 } label: {
                     Image(systemName: "clock.badge")
@@ -74,10 +83,13 @@ if '@State private var pinRevision = 0' not in s:
                         .frame(width: 42, height: 42)
                         .background(AppTheme.cardRaised, in: Circle())
                         .overlay(Circle().stroke(AppTheme.border))
-                }.buttonStyle(.plain).disabled(reminderBusy || !FixturePhase.isUpcoming(displayMatch.status)).accessibilityLabel("تذكير قبل المباراة")
-                Spacer()
-''')
-    if old in s: s = s.replace(old, new, 1)
+                }
+                .buttonStyle(.plain)
+                .disabled(reminderBusy || !FixturePhase.isUpcoming(displayMatch.status))
+                .accessibilityLabel("تذكير قبل المباراة")
+'''
+    if button_anchor not in s: raise RuntimeError('match center follow button anchor missing')
+    s = s.replace(button_anchor, button_anchor + controls, 1)
 write(p, s)
 
 # Compact/comfortable match density on the home feed.
