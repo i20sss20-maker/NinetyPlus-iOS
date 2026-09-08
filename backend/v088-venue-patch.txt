@@ -1,0 +1,28 @@
+// v0.8.8 — preserve stadium metadata from fixture payloads and use it as a
+// deterministic fallback when ESPN's match summary omits gameInfo/header venue.
+replaceOnce(
+  "    status:apiStatus(item), providerIds:{apiFootball:item?.fixture?.id?.toString() || null,espn:null}, sources:['api-football'], quality:'single-source'",
+  "    status:apiStatus(item), venue:normalizeVenue(item?.fixture?.venue), providerIds:{apiFootball:item?.fixture?.id?.toString() || null,espn:null}, sources:['api-football'], quality:'single-source'",
+  'API fixture venue preservation'
+);
+
+replaceOnce(
+  "    score:{home:started?parseScore(homeC.score):null,away:started?parseScore(awayC.score):null}, status:espnStatus(competition.status || event.status),\n    providerIds:{apiFootball:null,espn:event.id ? String(event.id):null}, sources:['espn'], quality:'single-source'",
+  "    score:{home:started?parseScore(homeC.score):null,away:started?parseScore(awayC.score):null}, status:espnStatus(competition.status || event.status),\n    venue:normalizeVenue(competition?.venue),\n    providerIds:{apiFootball:null,espn:event.id ? String(event.id):null}, sources:['espn'], quality:'single-source'",
+  'ESPN fixture venue preservation'
+);
+
+replaceOnce(
+  "    away:{...espn.away,...api.away,logo:api.away.logo || espn.away.logo},\n    providerIds:{apiFootball:api.providerIds.apiFootball,espn:espn.providerIds.espn},",
+  "    away:{...espn.away,...api.away,logo:api.away.logo || espn.away.logo},\n    venue:api.venue || espn.venue || null,\n    providerIds:{apiFootball:api.providerIds.apiFootball,espn:espn.providerIds.espn},",
+  'merged fixture venue preservation'
+);
+
+replaceOnce(
+  "  const detail={match,...mergeMatchDetails(api,espn),generatedAt:new Date().toISOString(),meta:{providerBudgetRemaining:providerBudgetRemaining(),providerRemoteBlocked}};",
+  "  const merged=mergeMatchDetails(api,espn);\n  if (!merged.venue?.name && match?.venue?.name) merged.venue=match.venue;\n  const detail={match,...merged,generatedAt:new Date().toISOString(),meta:{providerBudgetRemaining:providerBudgetRemaining(),providerRemoteBlocked}};",
+  'match venue fallback'
+);
+
+s = s.replaceAll("version:'0.8.7'", "version:'0.8.8'");
+s = s.replaceAll('90+ backend v0.8.7 listening', '90+ backend v0.8.8 listening');
