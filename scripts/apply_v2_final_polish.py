@@ -71,4 +71,129 @@ s = s.replace('Text(article.title).font(', 'Text(article.title.englishDigits).fo
 s = s.replace('Text(article.source).font(', 'Text(article.source.englishDigits).font(')
 write(p, s)
 
-print('Applied 90+ 2.0 final polish: Latin numeral locale, recent searches and in-app transfer reading')
+# Match Center resilience: the app's match IDs can be canonical `np:` IDs. Use the
+# canonical Railway detail endpoint first so fixture/events/stats/lineups remain
+# available through cache and provider fallbacks. Direct API-Football calls remain
+# only as a compatibility fallback for legacy numeric fixture IDs.
+p = 'Sources/Views/V2MatchExperience.swift'
+s = read(p)
+if 'loadCanonicalDetail' not in s:
+    old_load = '''    func load(_ match: APIPlusMatch, force: Bool = false) async {
+        guard !Task.isCancelled else { return }
+        prepare(match)
+        let lackedTeamIDs = current?.homeID == nil || current?.awayID == nil
+        await fetchSections(MatchDataSection.allCases, match: match, force: force)
+        if lackedTeamIDs, !Task.isCancelled, progress.matchID == match.id,
+           progress.state(.h2h).value == nil, current?.homeID != nil, current?.awayID != nil {
+            await loadSection(.h2h, match: match)
+        }
+    }
+
+    func refreshLive(_ match: APIPlusMatch, sections: [MatchDataSection]) async {
+        guard !Task.isCancelled else { return }
+        await fetchSections(Array(Set([.fixture] + sections)), match: match, force: false)
+    }
+'''
+    new_load = '''    func load(_ match: APIPlusMatch, force: Bool = false) async {
+        guard !Task.isCancelled else { return }
+        prepare(match)
+        let lackedTeamIDs = current?.homeID == nil || current?.awayID == nil
+        let primary: [MatchDataSection] = [.fixture, .events, .stats, .lineups]
+        let canonicalLoaded = await loadCanonicalDetail(match, sections: primary, force: force)
+        if !canonicalLoaded, Int(match.id) != nil {
+            await fetchSections(primary, match: match, force: force)
+        }
+        if !Task.isCancelled, progress.matchID == match.id,
+           progress.state(.h2h).value == nil, current?.homeID != nil, current?.awayID != nil,
+           (lackedTeamIDs || force || progress.state(.h2h).lastUpdated == nil) {
+            await loadSection(.h2h, match: match, force: force)
+        }
+    }
+
+    func refreshLive(_ match: APIPlusMatch, sections: [MatchDataSection]) async {
+        guard !Task.isCancelled else { return }
+        let primary = Array(Set([MatchDataSection.fixture] + sections.filter { $0 != .h2h }))
+        let canonicalLoaded = await loadCanonicalDetail(match, sections: primary, force: false)
+        if !canonicalLoaded, Int(match.id) != nil {
+            await fetchSections(primary, match: match, force: false)
+        }
+    }
+
+    private func loadCanonicalDetail(_ match: APIPlusMatch, sections: [MatchDataSection], force: Bool) async -> Bool {
+        guard !Task.isCancelled else { return false }
+        prepare(match)
+        let requested = Array(Set(sections.filter { $0 != .h2h }))
+        var tokens: [MatchDataSection: UUID] = [:]
+        for section in requested {
+            if let token = progress.begin(section, force: force) { tokens[section] = token }
+        }
+        guard !tokens.isEmpty else { return true }
+        defer {
+            for (section, token) in tokens { progress.cancel(section, token: token) }
+        }
+        do {
+            let detail = try await CanonicalSportsClient.detail(matchID: match.id)
+            try Task.checkCancellation()
+            guard progress.matchID == match.id else { return false }
+            current = detail.match.appMatch
+            if let token = tokens[.fixture] {
+                _ = progress.succeed(.fixture, token: token, hasContent: true)
+            }
+            if let token = tokens[.events] {
+                events = detail.appEvents
+                _ = progress.succeed(.events, token: token, hasContent: !events.isEmpty)
+            }
+            if let token = tokens[.stats] {
+                stats = detail.appStatistics
+                _ = progress.succeed(.stats, token: token, hasContent: !stats.isEmpty)
+            }
+            if let token = tokens[.lineups] {
+                lineups = detail.appLineups
+                _ = progress.succeed(.lineups, token: token, hasContent: !lineups.isEmpty)
+            }
+            lastObserved = current
+            return true
+        } catch {
+            guard !Task.isCancelled, !(error is CancellationError), progress.matchID == match.id else { return false }
+            // The route already has a valid match snapshot from the list/canonical feed.
+            // A failed background fixture refresh must never turn the whole page into an error.
+            if let token = tokens[.fixture] {
+                _ = progress.succeed(.fixture, token: token, hasContent: true)
+            }
+            let message = error.localizedDescription
+            for section in [MatchDataSection.events, .stats, .lineups] {
+                if let token = tokens[section] { progress.fail(section, token: token, message: message) }
+            }
+            return false
+        }
+    }
+'''
+    if old_load not in s: raise RuntimeError('match center load marker missing')
+    s = s.replace(old_load, new_load, 1)
+
+    marker = '''        if section == .h2h {
+            guard displayed.homeID != nil, displayed.awayID != nil else {
+                progress.markUnavailable(.h2h)
+                return
+            }
+            progress.markAvailable(.h2h)
+        }
+        guard let token = progress.begin(section, force: force) else { return }
+'''
+    replacement = '''        if section == .h2h {
+            guard displayed.homeID != nil, displayed.awayID != nil else {
+                progress.markUnavailable(.h2h)
+                return
+            }
+            progress.markAvailable(.h2h)
+        } else if Int(match.id) == nil {
+            _ = await loadCanonicalDetail(match, sections: [section], force: force)
+            return
+        }
+        guard let token = progress.begin(section, force: force) else { return }
+'''
+    if marker not in s: raise RuntimeError('match center section marker missing')
+    s = s.replace(marker, replacement, 1)
+write(p, s)
+
+print('Applied 90+ 2.0 final polish: Latin numerals, recent searches, in-app transfer reading and canonical Match Center resilience')
