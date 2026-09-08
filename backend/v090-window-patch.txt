@@ -1,4 +1,4 @@
-// v0.9.0 — collapse team/league multi-day fixture bursts into one canonical window request.
+// v0.9.1 — fast canonical windows; provider failures are delegated to the proven iOS daily fallback.
 replaceOnce(
   "function findESPNLeagueForMatch(match) {",
 `function windowDates(from,to) {
@@ -26,16 +26,8 @@ async function canonicalFixtureWindow(from,to,{team='',league='',season=''}={}) 
   const cacheKey=\`v2:window:${'${from}'}:${'${to}'}:team=${'${team}'}:league=${'${league}'}:season=${'${season}'}\`; const cached=getCached(cacheKey);
   if(cached) return JSON.parse(cached.body);
   const query={from,to,timezone:'UTC'}; if(team) query.team=team; if(league){query.league=league;query.season=season||String(new Date().getUTCFullYear());}
-  let api=[]; let apiError=null;
-  try { const value=await apiFootballJSON('fixtures',query); api=(value.response||[]).map(normalizeAPIFixture).filter(m=>windowFilter(m,team,league)); }
-  catch(error){ apiError=error; }
-  if(apiError){
-    const groups=await Promise.allSettled(days.map(date=>canonicalFixtures(date)));
-    const all=groups.flatMap(g=>g.status==='fulfilled'?(g.value.matches||[]):[]).filter(m=>windowFilter(m,team,league));
-    const seen=new Set(); const matches=all.filter(m=>seen.has(m.canonicalId)?false:(seen.add(m.canonicalId),true));
-    const payload={from,to,timezone:'UTC',generatedAt:new Date().toISOString(),matches,meta:{canonicalCount:matches.length,providerBudgetRemaining:providerBudgetRemaining(),primaryUnavailable:true,fallback:'daily-canonical'}};
-    putCache(cacheKey,{status:200,ok:true,body:JSON.stringify(payload)},120); return payload;
-  }
+  const value=await apiFootballJSON('fixtures',query);
+  const api=(value.response||[]).map(normalizeAPIFixture).filter(m=>windowFilter(m,team,league));
   const pairs=[]; const pairKeys=new Set();
   for(const match of api){ const l=ESPN_LEAGUES.find(x=>x.apiFootballID===match?.league?.id); const date=String(match.dateUTC||'').slice(0,10); if(l&&date){const key=\`${'${l.code}'}|${'${date}'}\`;if(!pairKeys.has(key)){pairKeys.add(key);pairs.push([l,date]);}} }
   const groups=await Promise.allSettled(pairs.map(([l,date])=>espnScoreboard(l,date)));
@@ -53,5 +45,5 @@ replaceOnce(
   "  if (url.pathname === '/api/v2/window') {\n    const from=String(url.searchParams.get('from')||''),to=String(url.searchParams.get('to')||'');\n    const team=String(url.searchParams.get('team')||''),league=String(url.searchParams.get('league')||''),season=String(url.searchParams.get('season')||'');\n    try { return sendJson(res,200,await canonicalFixtureWindow(from,to,{team,league,season}),{'Cache-Control':'public, max-age=90, stale-while-revalidate=300','X-90Plus-Source':'canonical-window'}); }\n    catch(error) { return sendJson(res,error?.status||503,{error:error?.message||'window_unavailable'}); }\n  }\n  if (url.pathname === '/api/v2/match') {",
   'canonical fixture window route'
 );
-s = s.replaceAll("version:'0.8.9'", "version:'0.9.0'");
-s = s.replaceAll('90+ backend v0.8.9 listening', '90+ backend v0.9.0 listening');
+s = s.replaceAll("version:'0.8.9'", "version:'0.9.1'");
+s = s.replaceAll('90+ backend v0.8.9 listening', '90+ backend v0.9.1 listening');
