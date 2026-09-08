@@ -24,6 +24,14 @@ jobs:
           python3 scripts/apply_canonical_reindex_fixes.py
           python3 scripts/apply_navigation_reliability_fixes.py
           python3 scripts/apply_popular_app_ux_fixes.py
+          python3 scripts/apply_data_resilience_fixes.py
+
+      - name: Verify Build 99 data resilience wiring
+        run: |
+          grep -q 'Do not hard-gate requests using upstream provider quota' Sources/Core/APIFootballClient.swift
+          ! grep -q 'guard await providerGate.allowsRequests()' Sources/Core/APIFootballClient.swift
+          grep -q 'if let stale = cache\[key\]' Sources/Core/APISportsStore.swift
+          grep -q 'نعرض آخر بيانات متاحة' Sources/Views/PageLoadFeedback.swift
 
       - name: Test page loading state
         run: |
