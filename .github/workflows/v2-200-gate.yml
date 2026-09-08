@@ -25,6 +25,7 @@ jobs:
           python3 scripts/apply_v2_final_polish.py
           python3 scripts/apply_v2_200_features.py
           python3 scripts/apply_v2_200_batch2.py
+          python3 scripts/apply_v2_200_features_3.py
       - name: Verify 200-feature wiring
         run: |
           python3 - <<'PY'
@@ -40,6 +41,9 @@ jobs:
             'event filters': ('Sources/Views/V2MatchExperience.swift', 'filteredEvents'),
             'spoiler notifications': ('Sources/Views/V2MatchExperience.swift', 'V2FeaturePreferences.spoilerMode'),
             'pinned priority': ('Sources/Views/V2HomeView.swift', 'PinnedMatchStore.contains(match.id) ? -100'),
+            'pre post summary': ('Sources/Views/V2MatchExperience.swift', 'V2MatchShareTools.phaseSummary'),
+            'share action': ('Sources/Views/V2MatchExperience.swift', 'V2MatchShareTools.summary'),
+            'race cards': ('Sources/Views/PublicLeagueTableView.swift', 'league.raceCards'),
           }
           missing=[]
           for name,(path,needle) in checks.items():
