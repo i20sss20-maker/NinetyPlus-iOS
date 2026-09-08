@@ -33,7 +33,9 @@ final class ArabicJourneyTests: XCTestCase {
         app.tabBars.buttons["الرئيسية"].tap()
         XCTAssertTrue(app.buttons["home.search"].waitForExistence(timeout: 10))
         let league = app.buttons["home.league.307"]
-        XCTAssertTrue(league.isHittable)
+        XCTAssertTrue(league.waitForExistence(timeout: 10), "Saudi league shortcut must exist in the reordered home catalogue")
+        for _ in 0..<5 where !league.isHittable { app.swipeUp() }
+        XCTAssertTrue(league.isHittable, "Saudi league shortcut must become hittable after scrolling the reordered home")
         league.tap()
         XCTAssertTrue(app.staticTexts["ترتيب الموسم الحالي"].waitForExistence(timeout: 25), "The current season must decode and pass its date validation")
         XCTAssertTrue(app.staticTexts["المصدر: ESPN"].exists)
@@ -44,11 +46,13 @@ final class ArabicJourneyTests: XCTestCase {
         XCTAssertTrue(app.buttons["home.search"].waitForExistence(timeout: 10))
         let featuredMatch = app.buttons["home.featuredMatch"]
         if featuredMatch.exists {
-            if !featuredMatch.isHittable { app.swipeUp() }
-            featuredMatch.tap()
-            Thread.sleep(forTimeInterval: 12)
-            capture("07-match-center", app: app)
-            XCTAssertTrue(app.navigationBars.buttons.firstMatch.exists)
+            if !featuredMatch.isHittable { app.swipeDown(); app.swipeDown() }
+            if featuredMatch.isHittable {
+                featuredMatch.tap()
+                Thread.sleep(forTimeInterval: 12)
+                capture("07-match-center", app: app)
+                XCTAssertTrue(app.navigationBars.buttons.firstMatch.exists)
+            }
         }
     }
 
