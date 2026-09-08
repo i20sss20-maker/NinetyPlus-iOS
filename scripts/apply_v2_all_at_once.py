@@ -16,10 +16,23 @@ write(p, s)
 p = 'Sources/Views/V2Personalization.swift'
 s = read(p)
 if 'NavigationLink { V2PowerCenterView() }' not in s:
-    marker = '                    statusCard\n'
     power = '                    NavigationLink { V2PowerCenterView() } label: { card("90+ 2.0", "الأدوات والتحليلات والإعدادات المتقدمة", "bolt.fill") }\n'
-    if marker not in s: raise RuntimeError('More power center insertion point missing')
-    s = s.replace(marker, power + marker, 1)
+    candidates = [
+        '                    statusCard\n',
+        '                    NavigationLink { EnhancedTransfersView() } label: { card("الانتقالات", "آخر أخبار سوق الانتقالات", "arrow.left.arrow.right") }\n',
+        '                    TopBar(title: "المزيد")\n',
+    ]
+    inserted = False
+    for marker in candidates:
+        if marker in s:
+            if marker == '                    statusCard\n':
+                s = s.replace(marker, power + marker, 1)
+            else:
+                s = s.replace(marker, marker + power, 1)
+            inserted = True
+            break
+    if not inserted:
+        raise RuntimeError('More power center insertion point missing after all supported transformations')
 s = s.replace('Text("\\(count)").font(.caption)', 'Text(String(count)).font(.caption).monospacedDigit()')
 write(p, s)
 
@@ -29,15 +42,12 @@ s = s.replace('Text(day.formatted(.dateTime.day())).font(.headline.bold())', 'Te
 s = s.replace('Text("\\(group.items.count) مباراة").font(.caption)', 'Text("\\(group.items.count) مباراة".englishDigits).font(.caption).monospacedDigit()')
 s = s.replace('Text(MatchLivePolicy.statusText(m.status, elapsed: m.elapsed)).font(.caption2.bold())', 'Text(MatchLivePolicy.statusText(m.status, elapsed: m.elapsed).englishDigits).font(.caption2.bold()).monospacedDigit()')
 s = s.replace('return value.text.isEmpty ? "—" : value.text', 'return value.text.isEmpty ? "—" : value.text.englishDigits')
-
-# Advanced analytics is source truthful: xG/possession/shots are shown only when present.
 if 'case "متقدم": return [.events, .stats]' not in s:
     s = s.replace('        case "تحليل 90+": return [.events, .stats]\n', '        case "تحليل 90+": return [.events, .stats]\n        case "متقدم": return [.events, .stats]\n', 1)
 if '"متقدم"], selected: $tab)' not in s:
     s = s.replace('SegmentBar(items: ["نظرة عامة", "تحليل 90+", "الأحداث", "الإحصائيات", "التشكيلة", "المواجهات"], selected: $tab)', 'SegmentBar(items: ["نظرة عامة", "تحليل 90+", "متقدم", "الأحداث", "الإحصائيات", "التشكيلة", "المواجهات"], selected: $tab)', 1)
 if 'V2AdvancedAnalysisView(match: displayMatch' not in s:
     s = s.replace('        case "تحليل 90+":\n            feedback(.events); feedback(.stats); insightView\n', '        case "تحليل 90+":\n            feedback(.events); feedback(.stats); insightView\n        case "متقدم":\n            feedback(.events); feedback(.stats); V2AdvancedAnalysisView(match: displayMatch, stats: store.stats, events: store.events)\n', 1)
-
 if 'LiveMatchActivityCoordinator.updateIfRunning' not in s:
     s = s.replace('                current = updated\n                lastObserved = updated\n', '                current = updated\n                lastObserved = updated\n                if #available(iOS 16.1, *) { await LiveMatchActivityCoordinator.updateIfRunning(match: updated) }\n', 1)
 if 'LiveMatchActivityCoordinator.end(matchID: match.id)' not in s:
