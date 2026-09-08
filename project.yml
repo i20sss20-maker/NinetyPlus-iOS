@@ -1,4 +1,4 @@
-# Release data contract: canonical backend v0.9.3 with Build 105 commercial hygiene, Build 104 server-side window fallback, Build 103 coalesced team windows, Build 102 windowed fixtures, Build 101 adaptive match refresh, Build 100 product polish, Build 99 data resilience and navigation reliability.
+# 90+ 2.0 integrated product branch. Build 105 remains the rollback baseline.
 name: NinetyPlus
 options:
   bundleIdPrefix: com.ninetyplus
@@ -8,14 +8,17 @@ settings:
   base:
     SWIFT_VERSION: 5.10
     PRODUCT_BUNDLE_IDENTIFIER: com.ninetyplus.app
-    MARKETING_VERSION: 1.0.0
-    CURRENT_PROJECT_VERSION: 105
+    MARKETING_VERSION: 2.0.0
+    CURRENT_PROJECT_VERSION: 200
 targets:
   NinetyPlus:
     type: application
     platform: iOS
     sources:
       - Sources
+      - Shared
+    dependencies:
+      - target: NinetyPlusWidgets
     scheme:
       testTargets:
         - NinetyPlusUITests
@@ -33,6 +36,12 @@ targets:
         NINETYPLUS_BACKEND_URL: 'https://ninetyplus-ios-production.up.railway.app/'
         CFBundleDevelopmentRegion: ar
         CFBundleLocalizations: [ar, en]
+        CFBundleURLTypes:
+          - CFBundleURLName: com.ninetyplus.app
+            CFBundleURLSchemes: [ninetyplus]
+        NSSupportsLiveActivities: true
+        NSSupportsLiveActivitiesFrequentUpdates: true
+        NSCalendarsWriteOnlyAccessUsageDescription: 'يستخدم 90+ إذن التقويم فقط عندما تختار إضافة مباراة إلى تقويمك.'
         UIUserInterfaceStyle: Dark
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
@@ -40,6 +49,27 @@ targets:
         UILaunchScreen: {}
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
+  NinetyPlusWidgets:
+    type: app-extension
+    platform: iOS
+    sources:
+      - Widgets
+      - Shared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.ninetyplus.app.widgets
+        CURRENT_PROJECT_VERSION: 200
+        MARKETING_VERSION: 2.0.0
+        APPLICATION_EXTENSION_API_ONLY: YES
+        SKIP_INSTALL: YES
+    info:
+      path: Widgets/Info.plist
+      properties:
+        CFBundleDisplayName: '90+ Widgets'
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
   NinetyPlusUITests:
     type: bundle.ui-testing
     platform: iOS

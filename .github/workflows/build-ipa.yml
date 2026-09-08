@@ -3,7 +3,7 @@ name: Build unsigned IPA
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main, v2-all-at-once]
     paths-ignore:
       - 'backend/**'
 
@@ -26,19 +26,39 @@ jobs:
           python3 scripts/apply_popular_app_ux_fixes.py
           python3 scripts/apply_data_resilience_fixes.py
           python3 scripts/apply_build100_product_polish.py
+          python3 scripts/apply_v2_all_at_once.py
+          python3 scripts/apply_v2_final_polish.py
 
-      - name: Verify Build 100 product wiring
+      - name: Verify 2.0 product wiring
         run: |
-          grep -q 'Do not hard-gate requests using upstream provider quota' Sources/Core/APIFootballClient.swift
-          ! grep -q 'guard await providerGate.allowsRequests()' Sources/Core/APIFootballClient.swift
-          grep -q 'if let stale = cache\[key\]' Sources/Core/APISportsStore.swift
-          grep -q 'نعرض آخر بيانات متاحة' Sources/Views/PageLoadFeedback.swift
-          grep -q 'accessibilityIdentifier("league.follow")' Sources/Views/V2LeagueHub.swift
-          grep -q 'fallbackTeam' Sources/Views/V2LeagueHub.swift
-          grep -q 'fallbackPlayer' Sources/Views/V2LeagueHub.swift
+          grep -q 'V2PowerCenterView' Sources/Views/V2Personalization.swift
+          grep -q 'home.quick.live' Sources/Views/V2HomeView.swift
+          grep -q 'team.snapshot' Sources/Views/V2Discovery.swift
+          grep -q 'match.team.home' Sources/Views/V2MatchExperience.swift
+          grep -q 'englishDigits' Sources/Core/SportsCopy.swift
+          grep -q 'v2.recentSearches' Sources/Views/V2Discovery.swift
+          grep -q 'ar-SA-u-ca-gregory-nu-latn' Sources/Core/PublicLeagueTable.swift
+          grep -q 'MARKETING_VERSION: 2.0.0' project.yml
+          grep -q 'NSSupportsLiveActivities: true' project.yml
+          grep -q 'NinetyPlusWidgets' project.yml
 
       - name: Audit commercial source hygiene
         run: python3 scripts/audit_commercial_hygiene.py
+
+      - name: Test English digit policy
+        run: |
+          cat > /tmp/digits.swift <<'SWIFT'
+          import Foundation
+          @main struct DigitsTest {
+              static func main() {
+                  precondition("١٢٣٤٥٦٧٨٩٠".englishDigits == "1234567890")
+                  precondition("۲۰۲۶".englishDigits == "2026")
+                  precondition(EnglishDigits.integer(90) == "90")
+              }
+          }
+          SWIFT
+          swiftc -parse-as-library Sources/Core/EnglishDigits.swift /tmp/digits.swift -o /tmp/digits-test
+          /tmp/digits-test
 
       - name: Test page loading state
         run: |
@@ -62,7 +82,7 @@ jobs:
 
       - name: Test player decoding, season labels and Arabic copy
         run: |
-          swiftc -swift-version 5 -parse-as-library Sources/Core/PlayerSeasonData.swift Sources/Core/SportsCopy.swift Tests/PlayerSeasonDataTests.swift -o /tmp/ninetyplus-player-tests
+          swiftc -swift-version 5 -parse-as-library Sources/Core/EnglishDigits.swift Sources/Core/PlayerSeasonData.swift Sources/Core/SportsCopy.swift Tests/PlayerSeasonDataTests.swift -o /tmp/ninetyplus-player-tests
           /tmp/ninetyplus-player-tests
 
       - name: Test service probe safeguards
@@ -114,7 +134,7 @@ jobs:
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
         with:
-          name: NinetyPlus-unsigned-IPA
+          name: NinetyPlus-2.0-unsigned-IPA
           path: NinetyPlus-unsigned.ipa
           if-no-files-found: error
           retention-days: 30

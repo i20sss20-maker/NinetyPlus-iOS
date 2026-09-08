@@ -24,9 +24,9 @@ struct PublicLeagueTable: Decodable {
         var id: String { "espn:" + team.id }
         func display(_ key: String) -> String {
             guard let value = stats.first(where: { $0.name == key }) else { return "—" }
-            if let text = value.displayValue, !text.isEmpty { return text }
+            if let text = value.displayValue, !text.isEmpty { return text.englishDigits }
             guard let number = value.value, number.isFinite else { return "—" }
-            return number.rounded() == number ? String(Int(number)) : String(number)
+            return (number.rounded() == number ? String(Int(number)) : String(number)).englishDigits
         }
         var imageURL: String? { team.logos?.first?.href }
         var sourceURL: URL? {
@@ -42,19 +42,14 @@ struct PublicLeagueTable: Decodable {
 
     static func decodeCurrent(_ data: Data, now: Date = Date()) throws -> PublicLeagueTable {
         let table = try JSONDecoder().decode(PublicLeagueTable.self, from: data)
-        let parser = ISO8601DateFormatter()
-        parser.formatOptions = [.withInternetDateTime]
+        let parser = ISO8601DateFormatter(); parser.formatOptions = [.withInternetDateTime]
         func parse(_ text: String?) -> Date? {
             guard let text else { return nil }
             if let value = parser.date(from: text) { return value }
-            let formatter = DateFormatter()
-            formatter.locale = Locale(identifier: "en_US_POSIX")
-            formatter.calendar = Calendar(identifier: .gregorian)
-            formatter.dateFormat = "yyyy-MM-dd'T'HH:mmX"
+            let formatter = DateFormatter(); formatter.locale = Locale(identifier: "en_US_POSIX"); formatter.calendar = Calendar(identifier: .gregorian); formatter.dateFormat = "yyyy-MM-dd'T'HH:mmX"
             return formatter.date(from: text)
         }
-        guard let start = parse(table.season.startDate), let end = parse(table.season.endDate),
-              start <= now, now < end else { throw PublicTableError.outdatedSeason }
+        guard let start = parse(table.season.startDate), let end = parse(table.season.endDate), start <= now, now < end else { throw PublicTableError.outdatedSeason }
         for group in table.children {
             if let year = group.standings.season, year != table.season.year { throw PublicTableError.outdatedSeason }
             let ids = group.standings.entries.map(\.id)
@@ -76,9 +71,7 @@ enum PublicTableError: LocalizedError {
 }
 
 enum PublicLeagueSource {
-    static func code(for leagueID: String) -> String? {
-        ["307": "ksa.1", "39": "eng.1", "140": "esp.1", "78": "ger.1", "135": "ita.1", "61": "fra.1"][leagueID]
-    }
+    static func code(for leagueID: String) -> String? { ["307": "ksa.1", "39": "eng.1", "140": "esp.1", "78": "ger.1", "135": "ita.1", "61": "fra.1"][leagueID] }
 }
 
 enum SportsDisplayDate {
@@ -89,11 +82,7 @@ enum SportsDisplayDate {
     }
     static let locale = Locale(identifier: "ar_SA@calendar=gregorian")
     static func label(_ date: Date, pattern: String = "EEEE، d MMMM") -> String {
-        let formatter = DateFormatter()
-        formatter.locale = locale
-        formatter.calendar = calendar
-        formatter.timeZone = calendar.timeZone
-        formatter.dateFormat = pattern
-        return formatter.string(from: date)
+        let formatter = DateFormatter(); formatter.locale = locale; formatter.calendar = calendar; formatter.timeZone = calendar.timeZone; formatter.dateFormat = pattern
+        return formatter.string(from: date).englishDigits
     }
 }

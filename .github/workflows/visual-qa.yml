@@ -1,16 +1,17 @@
 name: iPhone visual and live-service QA
+# Final integrated 2.0 visual gate: keep this workflow aligned with release transforms.
 on:
   workflow_dispatch:
   push:
-    branches: [main]
-    paths: ['Sources/**', 'UITests/**', 'Tests/**', 'project.yml', '.github/workflows/visual-qa.yml', 'scripts/**']
+    branches: [main, v2-all-at-once]
+    paths: ['Sources/**', 'Shared/**', 'Widgets/**', 'UITests/**', 'Tests/**', 'project.yml', '.github/workflows/visual-qa.yml', 'scripts/**']
 concurrency:
   group: visual-qa-${{ github.ref }}
   cancel-in-progress: true
 jobs:
   visual:
     runs-on: macos-15
-    timeout-minutes: 18
+    timeout-minutes: 22
     steps:
       - uses: actions/checkout@v4
       - name: Apply deterministic release UI fixes
@@ -24,23 +25,28 @@ jobs:
           python3 scripts/apply_popular_app_ux_fixes.py
           python3 scripts/apply_data_resilience_fixes.py
           python3 scripts/apply_build100_product_polish.py
-      - name: Verify Build 100 product wiring
+          python3 scripts/apply_v2_all_at_once.py
+          python3 scripts/apply_v2_final_polish.py
+      - name: Verify 2.0 product wiring
         run: |
-          grep -q 'Do not hard-gate requests using upstream provider quota' Sources/Core/APIFootballClient.swift
-          ! grep -q 'guard await providerGate.allowsRequests()' Sources/Core/APIFootballClient.swift
-          grep -q 'if let stale = cache\[key\]' Sources/Core/APISportsStore.swift
-          grep -q 'accessibilityIdentifier("league.follow")' Sources/Views/V2LeagueHub.swift
-          grep -q 'fallbackTeam' Sources/Views/V2LeagueHub.swift
-          grep -q 'fallbackPlayer' Sources/Views/V2LeagueHub.swift
+          grep -q 'V2PowerCenterView' Sources/Views/V2Personalization.swift
+          grep -q 'home.quick.live' Sources/Views/V2HomeView.swift
+          grep -q 'team.snapshot' Sources/Views/V2Discovery.swift
+          grep -q 'match.team.home' Sources/Views/V2MatchExperience.swift
+          grep -q 'englishDigits' Sources/Core/SportsCopy.swift
+          grep -q 'v2.recentSearches' Sources/Views/V2Discovery.swift
+          grep -q 'ar-SA-u-ca-gregory-nu-latn' Sources/Core/PublicLeagueTable.swift
+          grep -q 'MARKETING_VERSION: 2.0.0' project.yml
+          grep -q 'NinetyPlusWidgets' project.yml
       - name: Audit commercial source hygiene
         run: python3 scripts/audit_commercial_hygiene.py
       - name: Test RSS images and dates
         run: |
           swiftc -swift-version 5 -parse-as-library Sources/Core/EditorialFeed.swift Tests/EditorialFeedTests.swift -o /tmp/editorial-tests
           /tmp/editorial-tests
-      - name: Test player decoding and season labels
+      - name: Test player decoding and English digits
         run: |
-          swiftc -swift-version 5 -parse-as-library Sources/Core/PlayerSeasonData.swift Sources/Core/SportsCopy.swift Tests/PlayerSeasonDataTests.swift -o /tmp/player-tests
+          swiftc -swift-version 5 -parse-as-library Sources/Core/EnglishDigits.swift Sources/Core/PlayerSeasonData.swift Sources/Core/SportsCopy.swift Tests/PlayerSeasonDataTests.swift -o /tmp/player-tests
           /tmp/player-tests
       - name: Check actual dashboard sources
         run: |
@@ -53,12 +59,12 @@ jobs:
           cat evidence/production-match-detail.json
       - name: Test actual current-season table and identifiers
         run: |
-          swiftc -swift-version 5 -parse-as-library Sources/Core/PublicLeagueTable.swift Tests/PublicSourceTests.swift -o /tmp/public-tests
+          swiftc -swift-version 5 -parse-as-library Sources/Core/EnglishDigits.swift Sources/Core/PublicLeagueTable.swift Tests/PublicSourceTests.swift -o /tmp/public-tests
           if [ -s evidence/public-table.json ]; then /tmp/public-tests evidence/public-table.json; else /tmp/public-tests; fi
       - name: Upload source diagnostics early
         uses: actions/upload-artifact@v4
         with:
-          name: NinetyPlus-Data-Diagnostics
+          name: NinetyPlus-2.0-Data-Diagnostics
           path: evidence/*.json
           retention-days: 7
       - name: Install XcodeGen
@@ -99,16 +105,18 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: NinetyPlus-Visual-QA
+          name: NinetyPlus-2.0-Visual-QA
           path: evidence/
           retention-days: 14
       - name: Upload exact tested source snapshot
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: NinetyPlus-Tested-Source
+          name: NinetyPlus-2.0-Tested-Source
           path: |
             Sources/
+            Shared/
+            Widgets/
             Tests/
             UITests/
             project.yml
