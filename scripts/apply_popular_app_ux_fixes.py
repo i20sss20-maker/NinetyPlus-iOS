@@ -79,7 +79,8 @@ if marker in s:
         .background(AppTheme.card, in: RoundedRectangle(cornerRadius: 18))''',1)
 write(path,s)
 
-# Add the matches-hub interaction test. SegmentBar items are SwiftUI Buttons, not static text.
+# Add the matches-hub interaction test. Keep league and match checks independent so
+# UI automation does not depend on a particular NavigationStack back-button shape.
 path='UITests/ArabicJourneyTests.swift'
 s=read(path)
 if 'testMatchesHubInteractionPattern' not in s:
@@ -98,9 +99,13 @@ if 'testMatchesHubInteractionPattern' not in s:
         if league.waitForExistence(timeout: 20) {
             if !league.isHittable { app.swipeUp() }
             league.tap()
-            XCTAssertTrue(app.navigationBars.buttons.firstMatch.waitForExistence(timeout: 10))
-            app.navigationBars.buttons.firstMatch.tap()
+            XCTAssertTrue(app.staticTexts["الترتيب والنتائج وأندية البطولة"].waitForExistence(timeout: 12))
         }
+
+        app.terminate()
+        app.launch()
+        XCTAssertTrue(app.tabBars.buttons["المباريات"].waitForExistence(timeout: 20))
+        app.tabBars.buttons["المباريات"].tap()
         let match = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "matches.match.")).firstMatch
         if match.waitForExistence(timeout: 20) {
             if !match.isHittable { app.swipeUp() }
