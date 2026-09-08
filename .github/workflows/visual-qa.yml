@@ -1,4 +1,5 @@
 name: iPhone visual and live-service QA
+# Final integrated 2.0 visual gate: keep this workflow aligned with release transforms.
 on:
   workflow_dispatch:
   push:
