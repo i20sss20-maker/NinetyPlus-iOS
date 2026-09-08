@@ -54,6 +54,8 @@ jobs:
             'standing share': ('Sources/Views/PublicLeagueTableView.swift', 'standingShareText'),
             'deep link router': ('Sources/Core/V2DeepLinkRouter.swift', 'V2DeepLinkRouter'),
             'root deep link wiring': ('Sources/Views/RootView.swift', '.onOpenURL'),
+            'data health center': ('Sources/Views/V2DataHealthView.swift', 'data.healthCenter'),
+            'data health entry': ('Sources/Views/V2200FeatureCenter.swift', 'V2DataHealthView()'),
           }
           missing=[]
           for name,(path,needle) in checks.items():
