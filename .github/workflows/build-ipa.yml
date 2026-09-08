@@ -23,6 +23,7 @@ jobs:
           python3 scripts/apply_search_resilience_fixes.py
           python3 scripts/apply_canonical_reindex_fixes.py
           python3 scripts/apply_navigation_reliability_fixes.py
+          python3 scripts/apply_popular_app_ux_fixes.py
 
       - name: Test page loading state
         run: |
