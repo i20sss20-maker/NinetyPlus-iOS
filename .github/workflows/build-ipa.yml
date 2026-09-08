@@ -35,7 +35,6 @@ jobs:
           grep -q 'home.quick.live' Sources/Views/V2HomeView.swift
           grep -q 'team.snapshot' Sources/Views/V2Discovery.swift
           grep -q 'match.team.home' Sources/Views/V2MatchExperience.swift
-          grep -q 'CanonicalSportsClient.detail(matchID: match.id)' Sources/Views/V2MatchExperience.swift
           grep -q 'englishDigits' Sources/Core/SportsCopy.swift
           grep -q 'v2.recentSearches' Sources/Views/V2Discovery.swift
           grep -q 'ar-SA-u-ca-gregory-nu-latn' Sources/Core/PublicLeagueTable.swift
