@@ -79,16 +79,14 @@ if marker in s:
         .background(AppTheme.card, in: RoundedRectangle(cornerRadius: 18))''',1)
 write(path,s)
 
-# Give league destinations a stable automation hook independent of localized copy.
+# Give league destinations a stable automation hook on a visible accessibility node.
+# XCTest on iOS 18.5 does not reliably surface identifiers attached to ScrollView containers.
 path='Sources/Views/V2LeagueHub.swift'
 s=read(path)
 if 'accessibilityIdentifier("league.hub.' not in s:
-    marker='''        .background(AppTheme.bg.ignoresSafeArea())
-        .navigationTitle(league.arabicName)'''
-    replacement='''        .background(AppTheme.bg.ignoresSafeArea())
-        .accessibilityIdentifier("league.hub.\\(league.apiFootballID)")
-        .navigationTitle(league.arabicName)'''
-    if marker not in s: raise RuntimeError('league hub accessibility marker missing')
+    marker='Text(league.arabicName).font(.title2.bold()).foregroundStyle(.white)'
+    replacement='Text(league.arabicName).font(.title2.bold()).foregroundStyle(.white).accessibilityIdentifier("league.hub.\\(league.apiFootballID)")'
+    if marker not in s: raise RuntimeError('league hub title accessibility marker missing')
     s=s.replace(marker,replacement,1)
 write(path,s)
 
@@ -117,7 +115,7 @@ if 'testMatchesHubInteractionPattern' not in s:
         }
         guard let league = visibleLeague else { return XCTFail("No hittable league header found") }
         league.tap()
-        let leagueHub = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@", "league.hub.")).firstMatch
+        let leagueHub = app.staticTexts.matching(NSPredicate(format: "identifier BEGINSWITH %@", "league.hub.")).firstMatch
         XCTAssertTrue(leagueHub.waitForExistence(timeout: 12))
 
         app.terminate()
