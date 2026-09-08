@@ -3,41 +3,19 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths: ['.github/workflows/source-diagnostics.yml', 'scripts/probe_match_detail.py']
+    paths: ['.github/workflows/source-diagnostics.yml', 'scripts/probe_match_detail.py', 'scripts/probe_provider_queries.py', 'scripts/test_probe_provider_queries.py']
 jobs:
   inspect:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
+      - name: Test provider diagnostic outcomes without network requests
+        run: python3 -m unittest discover -s scripts -p 'test_probe_provider_queries.py' -v
       - name: Verify canonical completed-match detail in production
         run: python3 scripts/probe_match_detail.py
-      - name: Verify supported fixture and name queries
-        run: |
-          mkdir -p evidence
-          python3 - <<'PY'
-          import urllib.request, urllib.parse, json, datetime, pathlib
-          base='https://ninetyplus-ios-production.up.railway.app/'
-          def get(url):
-            req=urllib.request.Request(url,headers={'User-Agent':'NinetyPlus-QA/1.0','Accept':'application/json'})
-            try:
-              with urllib.request.urlopen(req,timeout=18) as r: return r.status,json.load(r)
-            except Exception as e: return getattr(e,'code',None),{'transportError':str(e)}
-          status,health=get(base+'api/health')
-          report={'health':health,'checks':[]}
-          today=datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=3))).date()
-          if health.get('ok') and health.get('providerRequestsToday',90)+3 <= health.get('providerDailyBudget',0):
-            queries=[{'path':'teams','search':'Ittihad'},{'path':'fixtures','date':str(today+datetime.timedelta(days=1)),'timezone':'Asia/Riyadh'},{'path':'fixtures','date':str(today-datetime.timedelta(days=1)),'timezone':'Asia/Riyadh'}]
-            for q in queries:
-              status,v=get(base+'api/football?'+urllib.parse.urlencode(q))
-              results=v.get('response',[])
-              record={'query':q,'status':status,'errors':v.get('errors') or v.get('error'),'count':len(results) if isinstance(results,list) else None}
-              if q['path']=='teams':record['teams']=[{'id':i['team']['id'],'name':i['team'].get('name'),'country':i['team'].get('country'),'city':(i.get('venue') or {}).get('city')} for i in results]
-              else:record['sample']=results[:1] if isinstance(results,list) else results
-              report['checks'].append(record)
-          pathlib.Path('evidence/free-plan-queries.json').write_text(json.dumps(report,ensure_ascii=False,indent=2))
-          print(json.dumps(report,ensure_ascii=False,indent=2))
-          PY
+      - name: Report provider availability and validate permitted queries
+        run: python3 scripts/probe_provider_queries.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:
