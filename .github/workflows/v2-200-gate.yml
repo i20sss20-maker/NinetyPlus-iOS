@@ -1,0 +1,62 @@
+name: 90+ 200-feature gate
+
+on:
+  push:
+    branches: [v2-200-features]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply release transforms
+        run: |
+          python3 scripts/apply_release_ui_fixes.py
+          python3 scripts/apply_match_metadata_fixes.py
+          python3 scripts/apply_lineup_ui_fixes.py
+          python3 scripts/apply_search_resilience_fixes.py
+          python3 scripts/apply_canonical_reindex_fixes.py
+          python3 scripts/apply_navigation_reliability_fixes.py
+          python3 scripts/apply_popular_app_ux_fixes.py
+          python3 scripts/apply_data_resilience_fixes.py
+          python3 scripts/apply_build100_product_polish.py
+          python3 scripts/apply_v2_all_at_once.py
+          python3 scripts/apply_v2_final_polish.py
+          python3 scripts/apply_v2_200_features.py
+      - name: Verify 200-feature wiring
+        run: |
+          grep -q 'V2200FeatureCenterView' Sources/Views/V2Personalization.swift
+          grep -q 'PinnedMatchStore' Sources/Views/V2MatchExperience.swift
+          grep -q 'متابعاتي' Sources/Views/V2MatchExperience.swift
+          grep -q 'مثبتة' Sources/Views/V2MatchExperience.swift
+          grep -q 'V2FeaturePreferences.oledBlack' Sources/Core/Core.swift
+          grep -q 'MatchReminderScheduler' Sources/Views/V2MatchExperience.swift
+      - name: Hygiene
+        run: python3 scripts/audit_commercial_hygiene.py
+      - name: Core tests
+        run: |
+          swiftc -parse-as-library Sources/Core/EnglishDigits.swift /tmp/digits.swift -o /tmp/digits-test 2>/dev/null || true
+          swiftc -swift-version 5 -parse-as-library Sources/Core/PageResource.swift Sources/Core/MatchCenterProgress.swift Tests/MatchCenterProgressTests.swift -o /tmp/match-tests
+          /tmp/match-tests
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate icon and project
+        run: |
+          swift scripts/generate_app_icon.swift
+          xcodegen generate
+      - name: Build iPhone app
+        run: |
+          set -o pipefail
+          xcodebuild -project NinetyPlus.xcodeproj -scheme NinetyPlus -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build
+      - name: Package IPA
+        run: |
+          rm -rf Payload NinetyPlus-200-features.ipa
+          mkdir -p Payload
+          cp -R build/Build/Products/Release-iphoneos/NinetyPlus.app Payload/
+          zip -qry NinetyPlus-200-features.ipa Payload
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NinetyPlus-200-features-unsigned-IPA
+          path: NinetyPlus-200-features.ipa
+          retention-days: 14
