@@ -63,6 +63,13 @@ struct V2200FeatureCenterView: View {
                     .buttonStyle(.plain)
                 }
 
+                section("التشخيص") {
+                    NavigationLink { V2DataHealthView() } label: {
+                        toolRow("صحة البيانات", "الشبكة، آخر تحديث، المباريات الحية وحالة المزود", "waveform.path.ecg")
+                    }
+                    .buttonStyle(.plain)
+                }
+
                 section("سياسة البيانات") {
                     info("الأرقام", "0–9 دائمًا", "textformat.123")
                     info("التحليلات", "تظهر فقط عند توفر بيانات حقيقية", "chart.xyaxis.line")
