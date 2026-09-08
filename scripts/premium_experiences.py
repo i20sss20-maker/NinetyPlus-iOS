@@ -48,18 +48,23 @@ def apply_premium(root):
     p = paths[2]
     output[p] = once(output[p], '                dataTruthCard\n', '''                NavigationLink { PremiumPulseView() } label: { featureCard("90+ Pulse وBrief", "المباريات والتغيّرات المرصودة وموجز يومك", "waveform.path.ecg") }
                     .accessibilityIdentifier("power.pulse")
+                NavigationLink { PremiumGlobalSearch() } label: { featureCard("البحث الشامل", "لاعب ونادٍ وبطولة ومباراة وخبر في مكان واحد", "magnifyingglass.circle.fill") }
+                    .accessibilityIdentifier("power.globalSearch")
                 NavigationLink { PremiumReadingRoom() } label: { featureCard("غرفة الأخبار", "بحث ومصادر ومقالات محفوظة", "bookmark.fill") }
                     .accessibilityIdentifier("power.reading")
-                Text("تحديث شاشة القفل يعمل مع وصول البيانات للتطبيق. التنبيهات الحية أثناء إغلاقه تحتاج خدمة Push مهيأة، وليست مفعلة في هذه النسخة.").font(.caption).foregroundStyle(AppTheme.muted).padding(.horizontal, 16)
+                Text("التذكير قبل المباراة يعمل محليًا على الجهاز. تحديث شاشة القفل يعمل مع وصول البيانات للتطبيق. تنبيهات الأهداف الحية أثناء إغلاقه تحتاج خدمة Push مهيأة، وليست مفعلة في هذه النسخة.").font(.caption).foregroundStyle(AppTheme.muted).padding(.horizontal, 16)
                 dataTruthCard
 ''', 'power entries')
     p = paths[3]
     output[p] = once(output[p], '                followBar\n', '''                followBar
+                if FixturePhase.isUpcoming(match.status), match.date != nil {
+                    PremiumMatchReminderView(match: match)
+                }
                 NavigationLink { PremiumMatchExperience(seed: match, store: store) } label: {
                     Label("وش فاتني؟ • Live 360 • قصة المباراة", systemImage: "waveform.path.ecg")
                         .font(.subheadline.bold()).foregroundStyle(AppTheme.green).padding(12)
                 }.accessibilityIdentifier("match.premium")
-''', 'match experience entry')
+''', 'match premium controls')
     # Canonical loader must update Live Activities too; it previously bypassed that hook.
     old = '''                current = updated
                 lastObserved = updated
@@ -76,6 +81,13 @@ def apply_premium(root):
                         Label("Team DNA • مؤشر الفورمة", systemImage: "chart.bar.xaxis").font(.subheadline.bold()).foregroundStyle(AppTheme.green)
                     }.accessibilityIdentifier("team.dna")
                     if let venue = team.venue {''', 'team intelligence entry')
+    output[p] = once(output[p], '''                VStack(spacing: 14) {
+                    info("الجنسية", SportsArabic.country(player.nationality))''', '''                NavigationLink { PremiumPlayerRadar(player: player) } label: {
+                    Label("Player Radar • معدلات كل 90", systemImage: "scope").font(.subheadline.bold()).foregroundStyle(AppTheme.green)
+                        .frame(maxWidth: .infinity).padding(13).background(AppTheme.green.opacity(0.10), in: RoundedRectangle(cornerRadius: 16))
+                }.accessibilityIdentifier("player.radar")
+                VStack(spacing: 14) {
+                    info("الجنسية", SportsArabic.country(player.nationality))''', 'player radar entry')
     p = paths[5]
     output[p] = once(output[p], '                    pitch\n', '                    PremiumInteractivePitch(draft: $draft, persist: persist)\n', 'interactive pitch')
     # Remove the now-unused old pitch view, using exact boundaries.
@@ -113,7 +125,7 @@ def apply_premium(root):
     output[p] = once(output[p], old, old + '.accessibilityIdentifier("more.power")', 'power navigation selector')
     for p, text in output.items():
         if text != originals[p]: (root / p).write_text(text, encoding='utf-8')
-    print('Premium integration: Pulse/Brief, saved news, Match 360, Team DNA, interactive lineup and canonical Activity updates')
+    print('Premium integration: Pulse/Brief, global search, reminders, Player Radar, saved news, Match 360, Team DNA, interactive lineup and canonical Activity updates')
 
 
 if __name__ == '__main__':
