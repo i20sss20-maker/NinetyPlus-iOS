@@ -1,6 +1,8 @@
 // v0.9.0 — collapse team/league multi-day fixture bursts into one canonical window request.
-function windowDates(from,to) {
-  const start=new Date(`${from}T00:00:00Z`), end=new Date(`${to}T00:00:00Z`);
+replaceOnce(
+  "function findESPNLeagueForMatch(match) {",
+`function windowDates(from,to) {
+  const start=new Date(\`${'${from}'}T00:00:00Z\`), end=new Date(\`${'${to}'}T00:00:00Z\`);
   if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || end<start) return [];
   const days=Math.floor((end-start)/86400000)+1; if(days<1 || days>15) return [];
   return Array.from({length:days},(_,i)=>new Date(start.getTime()+i*86400000).toISOString().slice(0,10));
@@ -21,7 +23,7 @@ function mergeOnlyPrimary(api,espn) {
 async function canonicalFixtureWindow(from,to,{team='',league='',season=''}={}) {
   const days=windowDates(from,to); if(!days.length) throw Object.assign(new Error('invalid_window'),{status:400});
   if(!team && !league) throw Object.assign(new Error('window_filter_required'),{status:400});
-  const cacheKey=`v2:window:${from}:${to}:team=${team}:league=${league}:season=${season}`; const cached=getCached(cacheKey);
+  const cacheKey=\`v2:window:${'${from}'}:${'${to}'}:team=${'${team}'}:league=${'${league}'}:season=${'${season}'}\`; const cached=getCached(cacheKey);
   if(cached) return JSON.parse(cached.body);
   const query={from,to,timezone:'UTC'}; if(team) query.team=team; if(league){query.league=league;query.season=season||String(new Date().getUTCFullYear());}
   let api=[]; let apiError=null;
@@ -35,13 +37,17 @@ async function canonicalFixtureWindow(from,to,{team='',league='',season=''}={}) 
     putCache(cacheKey,{status:200,ok:true,body:JSON.stringify(payload)},120); return payload;
   }
   const pairs=[]; const pairKeys=new Set();
-  for(const match of api){ const l=ESPN_LEAGUES.find(x=>x.apiFootballID===match?.league?.id); const date=String(match.dateUTC||'').slice(0,10); if(l&&date){const key=`${l.code}|${date}`;if(!pairKeys.has(key)){pairKeys.add(key);pairs.push([l,date]);}} }
+  for(const match of api){ const l=ESPN_LEAGUES.find(x=>x.apiFootballID===match?.league?.id); const date=String(match.dateUTC||'').slice(0,10); if(l&&date){const key=\`${'${l.code}'}|${'${date}'}\`;if(!pairKeys.has(key)){pairKeys.add(key);pairs.push([l,date]);}} }
   const groups=await Promise.allSettled(pairs.map(([l,date])=>espnScoreboard(l,date)));
   const espn=groups.flatMap(g=>g.status==='fulfilled'?g.value:[]);
   const matches=mergeOnlyPrimary(api,espn);
   const payload={from,to,timezone:'UTC',generatedAt:new Date().toISOString(),matches,meta:{apiFootballCount:api.length,espnCount:espn.length,canonicalCount:matches.length,providerBudgetRemaining:providerBudgetRemaining(),primaryUnavailable:false}};
   putCache(cacheKey,{status:200,ok:true,body:JSON.stringify(payload)},120); return payload;
 }
+
+function findESPNLeagueForMatch(match) {`,
+  'canonical window runtime functions'
+);
 replaceOnce(
   "  if (url.pathname === '/api/v2/match') {",
   "  if (url.pathname === '/api/v2/window') {\n    const from=String(url.searchParams.get('from')||''),to=String(url.searchParams.get('to')||'');\n    const team=String(url.searchParams.get('team')||''),league=String(url.searchParams.get('league')||''),season=String(url.searchParams.get('season')||'');\n    try { return sendJson(res,200,await canonicalFixtureWindow(from,to,{team,league,season}),{'Cache-Control':'public, max-age=90, stale-while-revalidate=300','X-90Plus-Source':'canonical-window'}); }\n    catch(error) { return sendJson(res,error?.status||503,{error:error?.message||'window_unavailable'}); }\n  }\n  if (url.pathname === '/api/v2/match') {",
