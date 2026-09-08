@@ -5,9 +5,14 @@ on:
     branches: [v2-200-features]
   workflow_dispatch:
 
+concurrency:
+  group: v2-200-features-gate
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: macos-15
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - name: Apply release transforms
