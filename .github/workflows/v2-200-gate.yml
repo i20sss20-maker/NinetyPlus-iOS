@@ -31,7 +31,7 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           checks = {
-            'feature center': ('Sources/Views/V2200FeatureCenterView.swift', 'V2200FeatureCenterView'),
+            'feature center': ('Sources/Views/V2200FeatureCenter.swift', 'V2200FeatureCenterView'),
             'feature entry': ('Sources/Views/V2Personalization.swift', 'V2200FeatureCenterView()'),
             'pinning': ('Sources/Views/V2MatchExperience.swift', 'PinnedMatchStore'),
             'my scores filter': ('Sources/Views/V2MatchExperience.swift', 'مبارياتي'),
@@ -50,6 +50,9 @@ jobs:
               ok=needle in Path(path).read_text(encoding='utf-8')
               print(f'{name}: {"OK" if ok else "MISSING"}')
               if not ok: missing.append(name)
+          feature_defs = sum(p.read_text(encoding='utf-8').count('struct V2200FeatureCenterView') for p in Path('Sources').rglob('*.swift'))
+          print(f'feature center definitions: {feature_defs}')
+          if feature_defs != 1: missing.append(f'duplicate feature center definitions={feature_defs}')
           if missing: raise SystemExit('missing wiring: '+', '.join(missing))
           PY
       - name: Hygiene
