@@ -1,4 +1,4 @@
-# Release data contract: canonical backend v0.8.9 with Build 101 adaptive match refresh, Build 100 product polish, Build 99 data resilience, navigation reliability and deep football-app interaction patterns.
+# Release data contract: canonical backend v0.9.0 with Build 102 windowed fixtures, Build 101 adaptive match refresh, Build 100 product polish, Build 99 data resilience and navigation reliability.
 name: NinetyPlus
 options:
   bundleIdPrefix: com.ninetyplus
@@ -9,7 +9,7 @@ settings:
     SWIFT_VERSION: 5.10
     PRODUCT_BUNDLE_IDENTIFIER: com.ninetyplus.app
     MARKETING_VERSION: 1.0.0
-    CURRENT_PROJECT_VERSION: 101
+    CURRENT_PROJECT_VERSION: 102
 targets:
   NinetyPlus:
     type: application

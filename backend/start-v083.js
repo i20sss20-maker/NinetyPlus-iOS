@@ -8,6 +8,7 @@ const extensionRaw = await readFile(new URL('./v083-coach-patch.txt', import.met
 const speedRaw = await readFile(new URL('./v087-speed-patch.txt', import.meta.url), 'utf8');
 const venueRaw = await readFile(new URL('./v088-venue-patch.txt', import.meta.url), 'utf8');
 const officialsRaw = await readFile(new URL('./v089-officials-patch.txt', import.meta.url), 'utf8');
+const windowRaw = await readFile(new URL('./v090-window-patch.txt', import.meta.url), 'utf8');
 // Text inserted into a template literal is parsed twice. Keep the SPL HTML cleaner
 // free of generated regex literals so escaped newlines cannot become invalid source.
 const extension = extensionRaw
@@ -17,5 +18,5 @@ const marker = "const generated = new URL('./.generated-server-v08.js', import.m
 if (!original.includes(marker)) throw new Error('v0.8.3 bootstrap marker missing');
 
 const generatedStart = new URL('./.generated-start-v083.js', import.meta.url);
-await writeFile(generatedStart, original.replace(marker, extension + '\n' + speedRaw + '\n' + venueRaw + '\n' + officialsRaw + '\n' + marker), 'utf8');
+await writeFile(generatedStart, original.replace(marker, extension + '\n' + speedRaw + '\n' + venueRaw + '\n' + officialsRaw + '\n' + windowRaw + '\n' + marker), 'utf8');
 await import(generatedStart.href + `?v=${Date.now()}`);
