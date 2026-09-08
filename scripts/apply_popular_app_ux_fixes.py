@@ -39,7 +39,7 @@ old='''                    ForEach(grouped) { group in
                             }.buttonStyle(.plain)
                         }
                     }'''
-new='''                    ForEach(grouped) { group in
+new=r'''                    ForEach(grouped) { group in
                         if let league = leagueOption(for: group) {
                             NavigationLink { V2LeagueHubView(league: league) } label: { leagueHeader(group, showsChevron: true) }
                                 .buttonStyle(.plain)
@@ -79,6 +79,7 @@ if marker in s:
         .background(AppTheme.card, in: RoundedRectangle(cornerRadius: 18))''',1)
 write(path,s)
 
+# Add the matches-hub interaction test. SegmentBar items are SwiftUI Buttons, not static text.
 path='UITests/ArabicJourneyTests.swift'
 s=read(path)
 if 'testMatchesHubInteractionPattern' not in s:
@@ -92,7 +93,7 @@ if 'testMatchesHubInteractionPattern' not in s:
         app.launch()
         XCTAssertTrue(app.tabBars.buttons["المباريات"].waitForExistence(timeout: 20))
         app.tabBars.buttons["المباريات"].tap()
-        XCTAssertTrue(app.staticTexts["متابعاتي"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["متابعاتي"].waitForExistence(timeout: 10))
         let league = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "matches.league.")).firstMatch
         if league.waitForExistence(timeout: 20) {
             if !league.isHittable { app.swipeUp() }
@@ -104,9 +105,10 @@ if 'testMatchesHubInteractionPattern' not in s:
         if match.waitForExistence(timeout: 20) {
             if !match.isHittable { app.swipeUp() }
             match.tap()
-            XCTAssertTrue(app.staticTexts["نظرة عامة"].waitForExistence(timeout: 12))
-            XCTAssertTrue(app.staticTexts["الإحصائيات"].exists)
-            XCTAssertTrue(app.staticTexts["التشكيلة"].exists)
+            XCTAssertTrue(app.buttons["match.follow"].waitForExistence(timeout: 12))
+            XCTAssertTrue(app.staticTexts["نظرة عامة"].exists || app.buttons["نظرة عامة"].exists)
+            XCTAssertTrue(app.staticTexts["الإحصائيات"].exists || app.buttons["الإحصائيات"].exists)
+            XCTAssertTrue(app.staticTexts["التشكيلة"].exists || app.buttons["التشكيلة"].exists)
         }
     }
 '''
@@ -114,5 +116,28 @@ if 'testMatchesHubInteractionPattern' not in s:
     s=s.replace(marker,test+marker,1)
 write(path,s)
 
+# Build 98 deeper UX patch adds home/club/player/match-center features and its test.
 runpy.run_path(str(ROOT / 'scripts/apply_deep_football_ux.py'), run_name='__main__')
+
+# Make the deep test independent of localized keyboard editing. Relaunch before the
+# player search instead of attempting an English "Select All" command on Arabic iOS.
+path='UITests/ArabicJourneyTests.swift'
+s=read(path)
+old='''        XCTAssertTrue(app.searchFields.firstMatch.waitForExistence(timeout: 10))
+        app.searchFields.firstMatch.tap()
+        app.searchFields.firstMatch.press(forDuration: 1.0); app.keys["Select All"].tap(); app.keys[XCUIKeyboardKey.delete.rawValue].tap(); app.searchFields.firstMatch.typeText("رونالدو\\n")
+        let player = app.buttons["search.player.874"]'''
+new='''        app.terminate()
+        app.launch()
+        XCTAssertTrue(app.tabBars.buttons["البحث"].waitForExistence(timeout: 20))
+        app.tabBars.buttons["البحث"].tap()
+        XCTAssertTrue(app.searchFields.firstMatch.waitForExistence(timeout: 10))
+        app.searchFields.firstMatch.tap()
+        app.searchFields.firstMatch.typeText("رونالدو\\n")
+        let player = app.buttons["search.player.874"]'''
+if old not in s:
+    raise RuntimeError('deep player-search QA cleanup marker missing')
+s=s.replace(old,new,1)
+write(path,s)
+
 print('popular football app UX fixes applied')
