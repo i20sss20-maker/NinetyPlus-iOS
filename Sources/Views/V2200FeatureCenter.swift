@@ -52,6 +52,17 @@ struct V2200FeatureCenterView: View {
                     toggle("البطاقات الحمراء", "تنبيه للأحداث المؤثرة", "rectangle.fill", $notifyRedCards)
                 }
 
+                section("مختبر التحليل") {
+                    NavigationLink { V2PlayerComparisonLabView() } label: {
+                        toolRow("مقارنة اللاعبين", "قارن لاعبين من متابعاتك بإحصائيات الموسم", "person.2.fill")
+                    }
+                    .buttonStyle(.plain)
+                    NavigationLink { V2LeagueFormDashboardView() } label: {
+                        toolRow("فورمة الأندية", "آخر تسلسل W/D/L منشور للبطولة", "chart.line.uptrend.xyaxis")
+                    }
+                    .buttonStyle(.plain)
+                }
+
                 section("سياسة البيانات") {
                     info("الأرقام", "0–9 دائمًا", "textformat.123")
                     info("التحليلات", "تظهر فقط عند توفر بيانات حقيقية", "chart.xyaxis.line")
@@ -101,5 +112,18 @@ struct V2200FeatureCenterView: View {
             Text(value).font(.caption).foregroundStyle(AppTheme.muted).multilineTextAlignment(.trailing)
         }
         .padding(.vertical, 7)
+    }
+
+    private func toolRow(_ title: String, _ subtitle: String, _ icon: String) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon).foregroundStyle(AppTheme.green).frame(width: 30)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title).font(.subheadline.bold()).foregroundStyle(.white)
+                Text(subtitle).font(.caption2).foregroundStyle(AppTheme.muted)
+            }
+            Spacer()
+            Image(systemName: "chevron.left").foregroundStyle(AppTheme.muted)
+        }
+        .padding(.vertical, 8)
     }
 }
