@@ -26,6 +26,7 @@ jobs:
           python3 scripts/apply_v2_200_features.py
           python3 scripts/apply_v2_200_batch2.py
           python3 scripts/apply_v2_200_features_3.py
+          python3 scripts/apply_v2_200_batch5.py
       - name: Verify 200-feature wiring
         run: |
           python3 - <<'PY'
@@ -48,6 +49,9 @@ jobs:
             'league form dashboard': ('Sources/Views/V2ComparisonLab.swift', 'V2LeagueFormDashboardView'),
             'comparison entry': ('Sources/Views/V2200FeatureCenter.swift', 'V2PlayerComparisonLabView()'),
             'form entry': ('Sources/Views/V2200FeatureCenter.swift', 'V2LeagueFormDashboardView()'),
+            'standing insights': ('Sources/Views/PublicLeagueTableView.swift', 'league.standingInsights'),
+            'leader points gap': ('Sources/Views/PublicLeagueTableView.swift', 'pointsGapToLeader'),
+            'standing share': ('Sources/Views/PublicLeagueTableView.swift', 'standingShareText'),
           }
           missing=[]
           for name,(path,needle) in checks.items():
