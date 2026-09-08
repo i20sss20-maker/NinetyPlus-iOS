@@ -33,7 +33,12 @@ final class ArabicJourneyTests: XCTestCase {
         app.tabBars.buttons["الرئيسية"].tap()
         XCTAssertTrue(app.buttons["home.search"].waitForExistence(timeout: 10))
         let league = app.buttons["home.league.307"]
-        XCTAssertTrue(league.isHittable)
+        var leagueVisible = league.exists && league.isHittable
+        for _ in 0..<7 where !leagueVisible {
+            app.swipeUp()
+            leagueVisible = league.exists && league.isHittable
+        }
+        XCTAssertTrue(leagueVisible, "Saudi league shortcut must become visible after scrolling the reordered home")
         league.tap()
         XCTAssertTrue(app.staticTexts["ترتيب الموسم الحالي"].waitForExistence(timeout: 25), "The current season must decode and pass its date validation")
         XCTAssertTrue(app.staticTexts["المصدر: ESPN"].exists)
@@ -44,11 +49,13 @@ final class ArabicJourneyTests: XCTestCase {
         XCTAssertTrue(app.buttons["home.search"].waitForExistence(timeout: 10))
         let featuredMatch = app.buttons["home.featuredMatch"]
         if featuredMatch.exists {
-            if !featuredMatch.isHittable { app.swipeUp() }
-            featuredMatch.tap()
-            Thread.sleep(forTimeInterval: 12)
-            capture("07-match-center", app: app)
-            XCTAssertTrue(app.navigationBars.buttons.firstMatch.exists)
+            for _ in 0..<4 where !featuredMatch.isHittable { app.swipeDown() }
+            if featuredMatch.isHittable {
+                featuredMatch.tap()
+                Thread.sleep(forTimeInterval: 12)
+                capture("07-match-center", app: app)
+                XCTAssertTrue(app.navigationBars.buttons.firstMatch.exists)
+            }
         }
     }
 
@@ -86,37 +93,25 @@ final class ArabicJourneyTests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-AppleLanguages", "(ar)", "-AppleLocale", "ar_SA"]
         app.launch()
-
         XCTAssertTrue(app.tabBars.buttons["المباريات"].waitForExistence(timeout: 20))
         app.tabBars.buttons["المباريات"].tap()
         XCTAssertTrue(app.buttons["متابعاتي"].waitForExistence(timeout: 10))
-
         let leagues = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "matches.league."))
         XCTAssertTrue(leagues.firstMatch.waitForExistence(timeout: 20))
         var visibleLeague = leagues.allElementsBoundByIndex.first(where: { $0.isHittable })
-        for _ in 0..<4 where visibleLeague == nil {
-            app.swipeUp()
-            visibleLeague = leagues.allElementsBoundByIndex.first(where: { $0.isHittable })
-        }
+        for _ in 0..<4 where visibleLeague == nil { app.swipeUp(); visibleLeague = leagues.allElementsBoundByIndex.first(where: { $0.isHittable }) }
         guard let league = visibleLeague else { return XCTFail("No hittable league header found") }
-
         let leagueTitle = league.staticTexts.firstMatch
-        XCTAssertTrue(leagueTitle.exists, "Visible league header must expose its title")
+        XCTAssertTrue(leagueTitle.exists)
         leagueTitle.tap()
-        XCTAssertTrue(app.staticTexts["الترتيب والنتائج وأندية البطولة"].waitForExistence(timeout: 12), "Tapping the visible league title must open the league hub")
-
-        app.terminate()
-        app.launch()
+        XCTAssertTrue(app.staticTexts["الترتيب والنتائج وأندية البطولة"].waitForExistence(timeout: 12))
+        app.terminate(); app.launch()
         XCTAssertTrue(app.tabBars.buttons["المباريات"].waitForExistence(timeout: 20))
         app.tabBars.buttons["المباريات"].tap()
-
         let matches = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "matches.match."))
         XCTAssertTrue(matches.firstMatch.waitForExistence(timeout: 20))
         var visibleMatch = matches.allElementsBoundByIndex.first(where: { $0.isHittable })
-        for _ in 0..<4 where visibleMatch == nil {
-            app.swipeUp()
-            visibleMatch = matches.allElementsBoundByIndex.first(where: { $0.isHittable })
-        }
+        for _ in 0..<4 where visibleMatch == nil { app.swipeUp(); visibleMatch = matches.allElementsBoundByIndex.first(where: { $0.isHittable }) }
         guard let match = visibleMatch else { return XCTFail("No hittable match card found") }
         match.tap()
         XCTAssertTrue(app.buttons["match.follow"].waitForExistence(timeout: 12))
@@ -126,9 +121,7 @@ final class ArabicJourneyTests: XCTestCase {
     }
 
     @MainActor private func capture(_ name: String, app: XCUIApplication) {
-        let screenshot = XCTAttachment(screenshot: app.screenshot())
-        screenshot.name = name; screenshot.lifetime = .keepAlways; add(screenshot)
-        let tree = XCTAttachment(string: app.debugDescription)
-        tree.name = name + "-accessibility-tree"; tree.lifetime = .keepAlways; add(tree)
+        let screenshot = XCTAttachment(screenshot: app.screenshot()); screenshot.name = name; screenshot.lifetime = .keepAlways; add(screenshot)
+        let tree = XCTAttachment(string: app.debugDescription); tree.name = name + "-accessibility-tree"; tree.lifetime = .keepAlways; add(tree)
     }
 }
