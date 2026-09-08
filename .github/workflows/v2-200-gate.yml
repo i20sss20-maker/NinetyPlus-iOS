@@ -44,6 +44,10 @@ jobs:
             'pre post summary': ('Sources/Views/V2MatchExperience.swift', 'V2MatchShareTools.phaseSummary'),
             'share action': ('Sources/Views/V2MatchExperience.swift', 'V2MatchShareTools.summary'),
             'race cards': ('Sources/Views/PublicLeagueTableView.swift', 'league.raceCards'),
+            'player comparison': ('Sources/Views/V2ComparisonLab.swift', 'V2PlayerComparisonLabView'),
+            'league form dashboard': ('Sources/Views/V2ComparisonLab.swift', 'V2LeagueFormDashboardView'),
+            'comparison entry': ('Sources/Views/V2200FeatureCenter.swift', 'V2PlayerComparisonLabView()'),
+            'form entry': ('Sources/Views/V2200FeatureCenter.swift', 'V2LeagueFormDashboardView()'),
           }
           missing=[]
           for name,(path,needle) in checks.items():
