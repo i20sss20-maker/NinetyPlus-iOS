@@ -40,7 +40,7 @@ private actor SharedFixtureDays {
     }
     func fetch(_ date: Date, force: Bool = false) async throws -> [APIFixture] {
         let key = Self.key(date)
-        let ttl: TimeInterval = key == Self.key(Date()) ? 40 : 1800
+        let ttl: TimeInterval = key == Self.key(Date()) ? AppRefreshPolicy.todayCacheTTL : 1800
         if !force, let entry = cache[key], (0..<ttl).contains(Date().timeIntervalSince(entry.fetchedAt)) { return entry.fixtures }
         if let task = pending[key] { return try await task.value }
         let task = Task<[APIFixture], Error> {
@@ -94,9 +94,6 @@ final class APISportsStore: ObservableObject {
 
     private var seasonCandidates: [Int] {
         let current = APIFootballClient.currentSeason
-        // Production diagnostics on the current free plan explicitly allow 2022...2024.
-        // Always try the real current season first so an upgraded plan starts using it
-        // automatically; otherwise fall back to 2024 and label it as 2024–25 in the UI.
         return current == 2024 ? [current] : [current, 2024]
     }
 
@@ -104,7 +101,7 @@ final class APISportsStore: ObservableObject {
         guard !refreshBusy, !Task.isCancelled else { return }
         let day = SharedFixtureDays.key(Date())
         if !force, refreshedDay == day, error == nil, let lastUpdated,
-           (0..<45).contains(Date().timeIntervalSince(lastUpdated)) { return }
+           (0..<AppRefreshPolicy.todayFreshness).contains(Date().timeIntervalSince(lastUpdated)) { return }
         refreshBusy = true; loading = true
         defer { refreshBusy = false; loading = false }
         do {
