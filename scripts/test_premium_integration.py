@@ -5,6 +5,10 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 
 class PremiumIntegrationTests(unittest.TestCase):
+    def test_sports_dates_use_explicit_calendar(self):
+        for path in (ROOT / 'Sources/Views').glob('*.swift'):
+            self.assertNotIn('.formatted(date:', path.read_text(encoding='utf-8'), str(path))
+
     def test_anchors_fail_closed(self):
         for text in ['missing', 'old old', 'new new', 'old new']:
             with self.assertRaises(RuntimeError): once(text, 'old', 'new', 'test')
