@@ -65,7 +65,8 @@ enum FreeSportsDirectory {
             .replacingOccurrences(of: "أ", with: "ا").replacingOccurrences(of: "إ", with: "ا")
             .replacingOccurrences(of: "آ", with: "ا").replacingOccurrences(of: "ى", with: "ي")
             .replacingOccurrences(of: "ـ", with: "").replacingOccurrences(of: "-", with: " ")
-        return folded.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+        let unmarked = String(String.UnicodeScalarView(folded.unicodeScalars.filter { !CharacterSet.nonBaseCharacters.contains($0) }))
+        return unmarked.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
     }
     static func playerQuery(_ raw: String) -> String {
         let aliases = ["رونالدو": "Cristiano Ronaldo", "كريستيانو": "Cristiano Ronaldo", "كريستيانو رونالدو": "Cristiano Ronaldo",
