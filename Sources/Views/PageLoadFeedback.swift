@@ -45,7 +45,8 @@ struct PageLoadFeedback: View {
                 .background(AppTheme.card, in: RoundedRectangle(cornerRadius: 18))
             }
             if hasValue, let updatedAt {
-                Text("آخر جلب ناجح \(updatedAt.formatted(date: .abbreviated, time: .shortened))")
+                Text("آخر جلب ناجح \(SportsDisplayDate.label(updatedAt, pattern: "d MMM yyyy، HH:mm"))")
+                    .accessibilityIdentifier("page.lastUpdated")
                     .font(.caption2)
                     .foregroundStyle(AppTheme.muted)
                     .frame(maxWidth: .infinity, alignment: .leading)
