@@ -82,10 +82,10 @@ def apply_premium(root):
                     }.accessibilityIdentifier("team.dna")
                     if let venue = team.venue {''', 'team intelligence entry')
     output[p] = once(output[p], '''                VStack(spacing: 14) {
-                    info("الجنسية", SportsArabic.country(player.nationality))''', '''                NavigationLink { PremiumPlayerRadar(player: player) } label: {
+                    info("الجنسية", SportsArabic.country(player.nationality))''', '''                if !player.id.hasPrefix("tsdb:") { NavigationLink { PremiumPlayerRadar(player: player) } label: {
                     Label("Player Radar • معدلات كل 90", systemImage: "scope").font(.subheadline.bold()).foregroundStyle(AppTheme.green)
                         .frame(maxWidth: .infinity).padding(13).background(AppTheme.green.opacity(0.10), in: RoundedRectangle(cornerRadius: 16))
-                }.accessibilityIdentifier("player.radar")
+                }.accessibilityIdentifier("player.radar") }
                 VStack(spacing: 14) {
                     info("الجنسية", SportsArabic.country(player.nationality))''', 'player radar entry')
     p = paths[5]

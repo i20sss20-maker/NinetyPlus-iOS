@@ -1,6 +1,27 @@
 import XCTest
 
 final class ArabicJourneyTests: XCTestCase {
+    @MainActor func testSourceConnectionDiagnostics() throws {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = ["-AppleLanguages", "(ar)", "-AppleLocale", "ar_SA"]
+        app.launch()
+        XCTAssertTrue(app.tabBars.buttons["المزيد"].waitForExistence(timeout: 20))
+        app.tabBars.buttons["المزيد"].tap()
+        let sources = app.buttons["more.sources"]
+        for _ in 0..<6 where !sources.isHittable { app.swipeUp() }
+        XCTAssertTrue(sources.isHittable)
+        sources.tap()
+        let check = app.buttons["sources.check"]
+        XCTAssertTrue(check.waitForExistence(timeout: 10))
+        if !check.isHittable { app.swipeUp() }
+        check.tap()
+        for id in ["gateway", "gateway-data", "direct"] {
+            XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "sources.result." + id).firstMatch.waitForExistence(timeout: 20))
+        }
+        XCTAssertTrue(app.staticTexts["المباريات عبر الخادم • متصل"].exists)
+        capture("10-connection-diagnostics", app: app)
+    }
     @MainActor func testArabicNavigationAgainstLiveService() throws {
         continueAfterFailure = false
         let app = XCUIApplication()
@@ -13,7 +34,7 @@ final class ArabicJourneyTests: XCTestCase {
         XCTAssertTrue(app.searchFields.firstMatch.waitForExistence(timeout: 10))
         app.searchFields.firstMatch.tap()
         app.searchFields.firstMatch.typeText("الاتحاد\n")
-        let saudiClub = app.buttons["search.team.2938"]
+        let saudiClub = app.buttons["search.team.espn:ksa.1:team:2276"]
         XCTAssertTrue(saudiClub.waitForExistence(timeout: 35), "Arabic search must include the actual Saudi Al-Ittihad ID, not only its namesakes")
         XCTAssertTrue(saudiClub.isHittable, "The Saudi club must be visible without scrolling past unrelated namesakes")
         capture("02-arabic-search", app: app)
@@ -76,7 +97,7 @@ final class ArabicJourneyTests: XCTestCase {
         XCTAssertTrue(app.searchFields.firstMatch.waitForExistence(timeout: 10))
         app.searchFields.firstMatch.tap()
         app.searchFields.firstMatch.typeText("رونالدو\n")
-        let player = app.buttons["search.player.874"]
+        let player = app.buttons["search.player.tsdb:34146304"]
         XCTAssertTrue(player.waitForExistence(timeout: 30), "Player search must include the known provider record")
         if !player.isHittable { app.swipeUp() }
         player.tap()

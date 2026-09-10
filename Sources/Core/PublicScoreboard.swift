@@ -50,6 +50,17 @@ enum PublicScoreboardSource {
         let homeAway: String?
         let score: String?
         let team: Team
+        enum CodingKeys: String, CodingKey { case id, homeAway, score, team }
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            id = try c.decodeIfPresent(String.self, forKey: .id)
+            homeAway = try c.decodeIfPresent(String.self, forKey: .homeAway)
+            team = try c.decode(Team.self, forKey: .team)
+            struct Score: Decodable { let displayValue: String?; let value: Double? }
+            if let text = try? c.decode(String.self, forKey: .score) { score = text }
+            else if let value = try? c.decode(Score.self, forKey: .score) { score = value.displayValue ?? value.value.map { String(Int($0)) } }
+            else { score = nil }
+        }
     }
     private struct Team: Decodable {
         let id: String?
@@ -150,9 +161,28 @@ enum PublicScoreboardSource {
 
     static func isFallbackID(_ id: String) -> Bool { id.hasPrefix("espn:") }
 
+    static func teamSchedule(id: String, next: Bool) async throws -> [APIPlusMatch] {
+        let parts = id.split(separator: ":").map(String.init)
+        guard parts.count == 4, parts[0] == "espn", parts[2] == "team",
+              let league = leagues.first(where: { $0.espnCode == parts[1] }),
+              parts[3].allSatisfy({ $0.isASCII && $0.isNumber }) else { throw FreeCoverageError.unavailable }
+        let url = URL(string: "https://site.web.api.espn.com/apis/site/v2/sports/soccer/\(league.espnCode)/teams/\(parts[3])/schedule")!
+        let data = try await FreeDataCache.shared.data(url: url, lifetime: 120, staleLifetime: 120)
+        let schedule = try JSONDecoder().decode(Scoreboard.self, from: data)
+        let today = SportsDisplayDate.calendar.startOfDay(for: Date())
+        let start = today.addingTimeInterval(next ? 0 : -7 * 86400)
+        let end = today.addingTimeInterval(next ? 8 * 86400 : 86400)
+        return deduplicated(schedule.events.compactMap { map($0, league: league) }.filter {
+            guard let date = $0.date else { return false }
+            return start <= date && date < end && (next ? !FixturePhase.isFinished($0.status) : FixturePhase.isFinished($0.status))
+        })
+    }
+
     private static func fetchRemote(date: Date, league: League) async throws -> [APIPlusMatch] {
-        var components = URLComponents(string: "https://site.api.espn.com/apis/site/v2/sports/soccer/\(league.espnCode)/scoreboard")!
-        components.queryItems = [URLQueryItem(name: "dates", value: dayKey(date).replacingOccurrences(of: "-", with: ""))]
+        var components = URLComponents(string: "https://site.web.api.espn.com/apis/site/v2/sports/soccer/\(league.espnCode)/scoreboard")!
+        let previous = SportsDisplayDate.calendar.date(byAdding: .day, value: -1, to: date) ?? date
+        let range = dayKey(previous).replacingOccurrences(of: "-", with: "") + "-" + dayKey(date).replacingOccurrences(of: "-", with: "")
+        components.queryItems = [URLQueryItem(name: "dates", value: range)]
         guard let url = components.url else { throw URLError(.badURL) }
         var request = URLRequest(url: url)
         request.timeoutInterval = 12
@@ -162,7 +192,9 @@ enum PublicScoreboardSource {
         try Task.checkCancellation()
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { throw APIFootballError.serviceUnavailable }
         let decoded = try JSONDecoder().decode(Scoreboard.self, from: data)
-        return decoded.events.compactMap { map($0, league: league) }
+        return decoded.events.compactMap { map($0, league: league) }.filter {
+            $0.date.map { SportsDisplayDate.calendar.isDate($0, inSameDayAs: date) } ?? false
+        }
     }
 
     private static func map(_ event: Event, league: League) -> APIPlusMatch? {
@@ -183,7 +215,7 @@ enum PublicScoreboardSource {
         )
     }
 
-    private static func mappedStatus(state: String, completed: Bool, description: String?, detail: String?, name: String?) -> String {
+    static func mappedStatus(state: String, completed: Bool, description: String?, detail: String?, name: String?) -> String {
         let text = [description, detail, name].compactMap { $0 }.joined(separator: " ").lowercased()
         if text.contains("postpon") { return "PST" }
         if text.contains("cancel") { return "CANC" }
@@ -204,11 +236,15 @@ enum PublicScoreboardSource {
         return nil
     }
 
-    private static func parseDate(_ raw: String) -> Date? {
+    static func parseDate(_ raw: String) -> Date? {
         let iso = ISO8601DateFormatter()
         if let date = iso.date(from: raw) { return date }
         iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return iso.date(from: raw)
+        if let date = iso.date(from: raw) { return date }
+        let formatter = DateFormatter(); formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = Calendar(identifier: .gregorian); formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "yyyy-MM-dd'T'HH:mmX"
+        return formatter.date(from: raw)
     }
 
     private static func dayKey(_ date: Date) -> String {
