@@ -95,6 +95,12 @@ final class ArabicJourneyTests: XCTestCase {
         app.tabBars.buttons["المباريات"].tap()
         XCTAssertTrue(app.buttons["متابعاتي"].waitForExistence(timeout: 10))
 
+        let updatedAt = app.staticTexts["page.lastUpdated"].firstMatch
+        XCTAssertTrue(updatedAt.waitForExistence(timeout: 20))
+        let year = Calendar(identifier: .gregorian).component(.year, from: Date())
+        XCTAssertTrue(updatedAt.label.contains(String(year)), "Refresh timestamp must use the Gregorian year")
+        XCTAssertFalse(updatedAt.label.contains(where: { "٠١٢٣٤٥٦٧٨٩".contains($0) }), "Refresh timestamp must use Latin digits")
+
         let leagues = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "matches.league."))
         XCTAssertTrue(leagues.firstMatch.waitForExistence(timeout: 20))
         var visibleLeague = leagues.allElementsBoundByIndex.first(where: { $0.isHittable })

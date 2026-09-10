@@ -2,7 +2,7 @@ name: Premium Pulse build and iPhone smoke tests
 on:
   workflow_dispatch:
   push:
-    branches: [feat/premium-pulse]
+    branches: [feat/premium-pulse, fix/release-readiness]
 permissions:
   contents: read
 concurrency:
@@ -18,6 +18,13 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p evidence
+          python3 scripts/test_global_search.py
+          swiftc -swift-version 5 -parse-as-library Sources/Core/FootballData.swift Sources/Core/LeagueRouting.swift Tests/LeagueRoutingTests.swift -o /tmp/league-routing-tests
+          /tmp/league-routing-tests
+          swiftc -swift-version 5 -parse-as-library Sources/Core/MatchReminderSchedule.swift Tests/MatchReminderScheduleTests.swift -o /tmp/reminder-tests
+          /tmp/reminder-tests
+          swiftc -swift-version 5 -parse-as-library Sources/Core/PageResource.swift Tests/PageResourceTests.swift -o /tmp/page-tests
+          /tmp/page-tests
           swiftc -swift-version 5 -parse-as-library Sources/Core/PremiumFootballModels.swift Tests/PremiumFootballTests.swift -o /tmp/premium-tests
           /tmp/premium-tests | tee evidence/premium-domain.txt
           swiftc -swift-version 5 -parse-as-library Sources/Core/V2FeatureModels.swift Tests/V2FeatureModelsTests.swift -o /tmp/feature-tests
@@ -67,19 +74,25 @@ jobs:
         run: |
           set -o pipefail
           xcodebuild build-for-testing -project NinetyPlus.xcodeproj -scheme NinetyPlus -configuration Debug -destination "id=$SIMULATOR_ID" -derivedDataPath premium-sim CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO 2>&1 | tee evidence/simulator-build.log
-      - name: Execute premium navigation and persistence smoke tests
+      - name: Execute premium and Arabic live-service journeys
         run: |
           set -o pipefail
           xcrun simctl boot "$SIMULATOR_ID" || true
           xcrun simctl bootstatus "$SIMULATOR_ID" -b
-          xcodebuild test-without-building -project NinetyPlus.xcodeproj -scheme NinetyPlus -configuration Debug -destination "id=$SIMULATOR_ID" -derivedDataPath premium-sim -resultBundlePath evidence/PremiumSmoke.xcresult -only-testing:NinetyPlusUITests/PremiumSmokeTests -parallel-testing-enabled NO CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO 2>&1 | tee evidence/ui-smoke.log
+          xcodebuild test-without-building -project NinetyPlus.xcodeproj -scheme NinetyPlus -configuration Debug -destination "id=$SIMULATOR_ID" -derivedDataPath premium-sim -resultBundlePath evidence/PremiumSmoke.xcresult -only-testing:NinetyPlusUITests/PremiumSmokeTests -only-testing:NinetyPlusUITests/ArabicJourneyTests -parallel-testing-enabled NO CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO 2>&1 | tee evidence/ui-smoke.log
+      - name: Export screenshots for inspection
+        if: always()
+        run: |
+          if [ -d evidence/PremiumSmoke.xcresult ]; then
+            xcrun xcresulttool export attachments --path evidence/PremiumSmoke.xcresult --output-path evidence/screenshots
+          fi
       - name: Package unsigned premium preview
         run: |
           mkdir -p Payload
           cp -R premium-build/Build/Products/Release-iphoneos/NinetyPlus.app Payload/
           zip -qr NinetyPlus-Premium-Pulse-unsigned.ipa Payload
           shasum -a 256 NinetyPlus-Premium-Pulse-unsigned.ipa > SHA256SUMS.txt
-          printf 'Commit: %s\nUnsigned preview, not TestFlight. UI smoke tests are limited to navigation and lineup persistence.\n' "$GITHUB_SHA" > BUILD_INFO.txt
+          printf 'Commit: %s\nUnsigned preview, not TestFlight. See QA artifacts for domain tests, Arabic live-service navigation and lineup persistence. No physical iPhone verification.\n' "$GITHUB_SHA" > BUILD_INFO.txt
       - uses: actions/upload-artifact@v4
         with:
           name: NinetyPlus-Premium-Pulse-unsigned-IPA

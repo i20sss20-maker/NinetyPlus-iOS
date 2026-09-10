@@ -101,7 +101,7 @@ if "private var nextMatch:" not in s:
                     Label(title, systemImage: icon).font(.caption.bold()).foregroundStyle(AppTheme.green)
                     Text("\(SportsArabic.team(match.home)) × \(SportsArabic.team(match.away))")
                         .font(.caption.weight(.semibold)).foregroundStyle(.white).lineLimit(2)
-                    if let date = match.date { Text(date.formatted(date: .abbreviated, time: .shortened)).font(.caption2).foregroundStyle(AppTheme.muted) }
+                    if let date = match.date { Text(SportsDisplayDate.label(date, pattern: "d MMM yyyy، HH:mm")).font(.caption2).foregroundStyle(AppTheme.muted) }
                     else { Text(MatchLivePolicy.statusText(match.status, elapsed: match.elapsed)).font(.caption2).foregroundStyle(AppTheme.muted) }
                 }.frame(maxWidth: .infinity, minHeight: 92, alignment: .leading)
                     .padding(13).background(AppTheme.card, in: RoundedRectangle(cornerRadius: 18, style: .continuous))

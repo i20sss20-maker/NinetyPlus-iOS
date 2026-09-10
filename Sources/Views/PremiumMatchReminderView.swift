@@ -8,7 +8,7 @@ struct PremiumMatchReminderView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Label("تذكير قبل المباراة", systemImage: "bell.badge.fill").font(.headline)
-            Text("تنبيه محلي على هذا الجهاز قبل البداية. لا يعتمد على سيرفر Push ولا يرسل أهدافًا أثناء إغلاق التطبيق.")
+            Text("يذكّرك هذا الجهاز قبل موعد البداية المحفوظ. إذا تغيّر موعد المباراة، ألغِ التذكير واضبطه من جديد. تنبيهات الأهداف المباشرة غير متاحة في هذه النسخة.")
                 .font(.caption).foregroundStyle(AppTheme.muted)
             Picker("قبل البداية", selection: $selected) {
                 ForEach([5, 15, 30, 60], id: \.self) { Text("\($0) دقيقة").tag($0) }
