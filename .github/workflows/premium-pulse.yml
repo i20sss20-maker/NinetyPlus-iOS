@@ -2,7 +2,7 @@ name: Premium Pulse build and iPhone smoke tests
 on:
   workflow_dispatch:
   push:
-    branches: [feat/premium-pulse, fix/release-readiness]
+    branches: [feat/premium-pulse, fix/release-readiness, fix/free-data]
 permissions:
   contents: read
 concurrency:
@@ -47,6 +47,7 @@ jobs:
           python3 scripts/apply_v2_final_polish.py
           python3 scripts/test_v2_feature_completion.py
           python3 scripts/test_premium_integration.py
+          python3 scripts/test_free_sources.py
           python3 scripts/audit_commercial_hygiene.py
           swiftc -swift-version 5 -parse-as-library Sources/Core/V2FeatureModels.swift Tests/PremiumLineupMigrationTests.swift -o /tmp/lineup-migration
           /tmp/lineup-migration
