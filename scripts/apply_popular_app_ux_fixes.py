@@ -26,7 +26,7 @@ if 'private func groupPriority(_ group: LeagueGroup)' not in s:
     }
 
     private func leagueOption(for group: LeagueGroup) -> LeagueOption? {
-        LeagueOption.featured.first { $0.apiFootballID == group.id }
+        LeagueOption.fromFixtureLeague(id: group.id, name: group.name)
     }
 '''
     s=s.replace(marker,helper+marker,1)

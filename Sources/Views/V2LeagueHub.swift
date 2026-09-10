@@ -1,19 +1,5 @@
 import SwiftUI
 
-extension LeagueOption {
-    var apiFootballID: String {
-        switch id {
-        case "4668": return "307"
-        case "4328": return "39"
-        case "4335": return "140"
-        case "4331": return "78"
-        case "4332": return "135"
-        case "4334": return "61"
-        default: return id
-        }
-    }
-}
-
 struct V2LeagueHubView: View {
     let league: LeagueOption
     @State private var section = "الترتيب"
@@ -26,6 +12,11 @@ struct V2LeagueHubView: View {
     private var scorers: [APIPlusScorer] { scorersState.value ?? [] }
     private var scorerSeason: Int { scorers.first?.season ?? APIFootballClient.currentSeason }
     private var scorerSeasonIsFallback: Bool { scorers.first.map { $0.season != APIFootballClient.currentSeason } ?? false }
+
+    init(league: LeagueOption) {
+        self.league = league
+        _section = State(initialValue: PublicLeagueSource.code(for: league.apiFootballID) == nil ? "المباريات" : "الترتيب")
+    }
 
     var body: some View {
         ScrollView {
