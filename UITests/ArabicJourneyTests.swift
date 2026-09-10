@@ -1,6 +1,27 @@
 import XCTest
 
 final class ArabicJourneyTests: XCTestCase {
+    @MainActor func testSourceConnectionDiagnostics() throws {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = ["-AppleLanguages", "(ar)", "-AppleLocale", "ar_SA"]
+        app.launch()
+        XCTAssertTrue(app.tabBars.buttons["المزيد"].waitForExistence(timeout: 20))
+        app.tabBars.buttons["المزيد"].tap()
+        let sources = app.buttons["more.sources"]
+        for _ in 0..<6 where !sources.isHittable { app.swipeUp() }
+        XCTAssertTrue(sources.isHittable)
+        sources.tap()
+        let check = app.buttons["sources.check"]
+        XCTAssertTrue(check.waitForExistence(timeout: 10))
+        if !check.isHittable { app.swipeUp() }
+        check.tap()
+        for id in ["gateway", "gateway-data", "direct"] {
+            XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "sources.result." + id).firstMatch.waitForExistence(timeout: 20))
+        }
+        XCTAssertTrue(app.staticTexts["المباريات عبر الخادم • متصل"].exists)
+        capture("10-connection-diagnostics", app: app)
+    }
     @MainActor func testArabicNavigationAgainstLiveService() throws {
         continueAfterFailure = false
         let app = XCUIApplication()

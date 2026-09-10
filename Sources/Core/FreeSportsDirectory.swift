@@ -28,12 +28,10 @@ enum FreeSportsDirectory {
         // League catalogues include Saudi clubs that the free one-result search
         // can omit in favour of unrelated namesakes.
         let values = try await espnTeams()
-        let key = normalized(query)
-        return values.filter { normalized($0.name).contains(key) }
-            .sorted { ($0.country == "Saudi Arabia" ? 0 : 1) < ($1.country == "Saudi Arabia" ? 0 : 1) }
+        return rankedTeams(values, query: query)
     }
     static func players(_ query: String) async throws -> [APIPlusPlayer] {
-        let query = ["Ronaldo": "Cristiano Ronaldo", "Messi": "Lionel Messi", "Neymar": "Neymar"] [query] ?? query
+        let query = playerQuery(query)
         let result: Players = try await get("searchplayers.php", key: "p", value: query)
         return (result.player ?? result.players ?? []).filter { $0.strSport == "Soccer" }.map(\.value)
     }
@@ -62,9 +60,46 @@ enum FreeSportsDirectory {
         }
         let sports: [Sport]
     }
-    private static func normalized(_ value: String) -> String {
-        value.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: Locale(identifier: "en_US_POSIX"))
-            .replacingOccurrences(of: "-", with: " ")
+    static func normalized(_ value: String) -> String {
+        let folded = value.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: Locale(identifier: "en_US_POSIX"))
+            .replacingOccurrences(of: "أ", with: "ا").replacingOccurrences(of: "إ", with: "ا")
+            .replacingOccurrences(of: "آ", with: "ا").replacingOccurrences(of: "ى", with: "ي")
+            .replacingOccurrences(of: "ـ", with: "").replacingOccurrences(of: "-", with: " ")
+        return folded.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+    }
+    static func playerQuery(_ raw: String) -> String {
+        let aliases = ["رونالدو": "Cristiano Ronaldo", "كريستيانو": "Cristiano Ronaldo", "كريستيانو رونالدو": "Cristiano Ronaldo",
+                       "ronaldo": "Cristiano Ronaldo", "ميسي": "Lionel Messi", "ليونيل ميسي": "Lionel Messi", "messi": "Lionel Messi",
+                       "محمد صلاح": "Mohamed Salah", "صلاح": "Mohamed Salah", "هالاند": "Erling Haaland",
+                       "مبابي": "Kylian Mbappe", "بنزيما": "Karim Benzema", "نيمار": "Neymar"]
+        return aliases[normalized(raw)] ?? raw.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    static func rankedTeams(_ values: [APIPlusTeam], query: String) -> [APIPlusTeam] {
+        let aliases = ["الاتحاد": "ittihad", "الهلال": "hilal", "النصر": "nassr", "الاهلي": "ahli",
+                       "الشباب": "shabab", "القادسية": "qadisiyah", "الاتفاق": "ettifaq",
+                       "ريال مدريد": "real madrid", "برشلونة": "barcelona", "برشلونه": "barcelona",
+                       "ليفربول": "liverpool", "ارسنال": "arsenal", "تشيلسي": "chelsea",
+                       "مانشستر سيتي": "manchester city", "مانشستر يونايتد": "manchester united",
+                       "بايرن ميونخ": "bayern munich", "باريس سان جيرمان": "paris saint germain",
+                       "يوفنتوس": "juventus", "انتر ميلان": "internazionale"]
+        let input = normalized(query)
+        guard input.count >= 2 else { return [] }
+        let key = aliases[input] ?? input
+        func rank(_ team: APIPlusTeam) -> Int {
+            let name = normalized(team.name)
+            return (name == key ? 0 : 10) + (team.country == "Saudi Arabia" ? 0 : 1)
+        }
+        var seen = Set<String>()
+        return values.filter { normalized($0.name).contains(key) || normalized(SportsArabic.team($0.name)).contains(input) }
+            .sorted { a, b in
+                if rank(a) != rank(b) { return rank(a) < rank(b) }
+                if a.name != b.name { return a.name < b.name }
+                return a.id < b.id
+            }
+            .filter { team in
+                let identity = team.id.hasPrefix("espn:") ? "espn:" + (team.id.split(separator: ":").last.map(String.init) ?? team.id) : team.id
+                return seen.insert(identity).inserted
+            }
     }
     static func espnTeams() async throws -> [APIPlusTeam] {
         try await withThrowingTaskGroup(of: [APIPlusTeam].self) { group in

@@ -77,6 +77,12 @@ def apply_free_sources(root):
                 } else { seasonSummary }
 '''))
     edit('Sources/Views/PremiumGlobalSearch.swift', lambda s: s.replace('لاعب • نادي • بطولة • مباراة • خبر', 'الأندية: ESPN • اللاعبون: TheSportsDB • نتائج محدودة'))
+    def player_coverage(s):
+        feedback = '                PageLoadFeedback(loading: resource.isLoading || resource.key == nil, hasValue: resource.value != nil, message: resource.errorMessage, updatedAt: nil) { retry += 1 }'
+        s = replace(s, feedback, '                if !player.id.hasPrefix("tsdb:") {\n' + feedback + '\n                }')
+        s = replace(s, '        let token = resource.begin(key: player.id, retainingValue: true)', '        guard !player.id.hasPrefix("tsdb:") else { return }\n        let token = resource.begin(key: player.id, retainingValue: true)')
+        return s
+    edit('Sources/Views/V2Discovery.swift', player_coverage)
     def more(s):
         s = s.replace('health?.ok == true && health?.providerConfigured != false && !healthError', '!healthError')
         s = s.replace('الخدمة متصلة وتعمل بشكل طبيعي', 'مصدر المباريات المجاني متصل')
@@ -88,6 +94,7 @@ def apply_free_sources(root):
     edit('Sources/Views/V2Personalization.swift', lambda s: replace(s, '                    statusCard', '                    NavigationLink { FreeSourceSettingsView() } label: { card("مصادر البيانات", "الاتصال المباشر أو خادمك المجاني", "network") }\n                    statusCard'))
     for path in ['Sources/Core/PublicScoreboard.swift', 'Sources/Core/FreeSportsDirectory.swift', 'Sources/Core/FreeMatchDetail.swift', 'Sources/Views/PublicLeagueTableView.swift']:
         edit(path, lambda s: s.replace('URLSession.shared.data(for: request)', 'FreeSourceTransport.data(for: request)'))
+    edit('Sources/Views/V2Personalization.swift', lambda s: replace(s, 'card("مصادر البيانات", "الاتصال المباشر أو خادمك المجاني", "network") }', 'card("مصادر البيانات", "الاتصال المباشر أو خادمك المجاني", "network") }.accessibilityIdentifier("more.sources")'))
     # Earlier release transforms append journeys using the former provider's IDs.
     edit('UITests/ArabicJourneyTests.swift', lambda s: s.replace('search.team.2938', 'search.team.espn:ksa.1:team:2276').replace('search.player.874', 'search.player.tsdb:34146304'))
 
