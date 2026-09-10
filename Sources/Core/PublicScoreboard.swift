@@ -180,7 +180,9 @@ enum PublicScoreboardSource {
 
     private static func fetchRemote(date: Date, league: League) async throws -> [APIPlusMatch] {
         var components = URLComponents(string: "https://site.web.api.espn.com/apis/site/v2/sports/soccer/\(league.espnCode)/scoreboard")!
-        components.queryItems = [URLQueryItem(name: "dates", value: dayKey(date).replacingOccurrences(of: "-", with: ""))]
+        let previous = SportsDisplayDate.calendar.date(byAdding: .day, value: -1, to: date) ?? date
+        let range = dayKey(previous).replacingOccurrences(of: "-", with: "") + "-" + dayKey(date).replacingOccurrences(of: "-", with: "")
+        components.queryItems = [URLQueryItem(name: "dates", value: range)]
         guard let url = components.url else { throw URLError(.badURL) }
         var request = URLRequest(url: url)
         request.timeoutInterval = 12
@@ -234,7 +236,7 @@ enum PublicScoreboardSource {
         return nil
     }
 
-    private static func parseDate(_ raw: String) -> Date? {
+    static func parseDate(_ raw: String) -> Date? {
         let iso = ISO8601DateFormatter()
         if let date = iso.date(from: raw) { return date }
         iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]

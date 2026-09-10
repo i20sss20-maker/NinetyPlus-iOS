@@ -77,5 +77,8 @@ def apply_free_sources(root):
         s = replace(s, '                    statusCard', '                    Text("المباريات والترتيب والأندية: ESPN. ملفات اللاعبين: TheSportsDB بنتائج بحث محدودة. الأخبار: RSS. التفاصيل المتقدمة غير متاحة ضمن هذه النسخة المجانية.")\n                        .font(.caption).foregroundStyle(AppTheme.muted).padding(.horizontal, 20)\n                    statusCard')
         return s
     edit('Sources/Views/V2Personalization.swift', more)
+    edit('Sources/Views/V2Personalization.swift', lambda s: replace(s, '                    statusCard', '                    NavigationLink { FreeSourceSettingsView() } label: { card("مصادر البيانات", "الاتصال المباشر أو خادمك المجاني", "network") }\n                    statusCard'))
+    for path in ['Sources/Core/PublicScoreboard.swift', 'Sources/Core/FreeSportsDirectory.swift', 'Sources/Core/FreeMatchDetail.swift', 'Sources/Views/PublicLeagueTableView.swift']:
+        edit(path, lambda s: s.replace('URLSession.shared.data(for: request)', 'FreeSourceTransport.data(for: request)'))
 
 if __name__ == '__main__': apply_free_sources(Path(__file__).resolve().parents[1])

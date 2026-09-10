@@ -32,6 +32,7 @@ import Foundation
         assert(playerID == "34146304")
         let detail = try FreeMatchDetail.decode(Data(contentsOf: URL(fileURLWithPath: "Tests/Fixtures/free-summary.json")), seed: value)
         assert(detail.appLineups.count == 2)
+        assert(detail.match.appMatch.date != nil, "ESPN timestamps without seconds must decode")
         assert(detail.appLineups.allSatisfy { $0.startXI?.count == 11 })
         assert(detail.appLineups.allSatisfy { $0.startXI?.allSatisfy { $0.player.id == nil } == true })
         assert(!detail.appStatistics.isEmpty && !detail.appEvents.isEmpty)

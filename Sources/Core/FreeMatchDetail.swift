@@ -46,7 +46,8 @@ enum FreeMatchDetail {
                 "elapsed": state == "in" ? text(status["displayClock"]).flatMap { Int($0.prefix { $0.isNumber }) } : nil]),
             "providerIds": ["espn": eventID], "sources": ["ESPN"]
         ]
-        fixture["dateUTC"] = competition["date"] ?? seed.date.map { ISO8601DateFormatter().string(from: $0) }
+        let kickoff = text(competition["date"]).flatMap(PublicScoreboardSource.parseDate) ?? seed.date
+        fixture["dateUTC"] = kickoff.map { ISO8601DateFormatter().string(from: $0) }
         let events = array(root["keyEvents"] ?? root["plays"]).map { item in
             clean(["minute": text(dict(item["clock"])["displayValue"]),
                    "type": text(dict(item["type"])["text"]) ?? text(dict(item["type"])["name"]),
@@ -67,7 +68,7 @@ enum FreeMatchDetail {
                 "players": array(item["roster"]).map { row in
                     let athlete = dict(row["athlete"])
                     return clean(["name": text(athlete["displayName"]), "jersey": athlete["jersey"] ?? row["jersey"],
-                        "position": text(dict(athlete["position"])["abbreviation"]), "starter": row["starter"] ?? row["isStarter"]])
+                        "position": text(dict(row["position"] ?? athlete["position"])["abbreviation"]), "starter": row["starter"] ?? row["isStarter"]])
                 }])
         }
         let payload: [String: Any] = ["match": fixture, "events": events, "statistics": statistics, "lineups": lineups,
