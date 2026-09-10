@@ -80,5 +80,8 @@ def apply_free_sources(root):
     edit('Sources/Views/V2Personalization.swift', lambda s: replace(s, '                    statusCard', '                    NavigationLink { FreeSourceSettingsView() } label: { card("مصادر البيانات", "الاتصال المباشر أو خادمك المجاني", "network") }\n                    statusCard'))
     for path in ['Sources/Core/PublicScoreboard.swift', 'Sources/Core/FreeSportsDirectory.swift', 'Sources/Core/FreeMatchDetail.swift', 'Sources/Views/PublicLeagueTableView.swift']:
         edit(path, lambda s: s.replace('URLSession.shared.data(for: request)', 'FreeSourceTransport.data(for: request)'))
+    # Earlier release transforms append journeys using the former provider's IDs.
+    edit('UITests/ArabicJourneyTests.swift', lambda s: s.replace('search.team.2938', 'search.team.espn:ksa.1:team:2276').replace('search.player.874', 'search.player.tsdb:34146304'))
 
 if __name__ == '__main__': apply_free_sources(Path(__file__).resolve().parents[1])
+
