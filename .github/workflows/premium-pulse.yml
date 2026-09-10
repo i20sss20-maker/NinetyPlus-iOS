@@ -14,6 +14,8 @@ jobs:
     timeout-minutes: 28
     steps:
       - uses: actions/checkout@v4
+      - name: Verify deployed free data gateway
+        run: python3 scripts/probe_free_gateway.py
       - name: Run deterministic domain and existing recovery tests
         run: |
           set -euo pipefail

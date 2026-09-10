@@ -1,13 +1,13 @@
 import SwiftUI
 
 struct FreeSourceSettingsView: View {
-    @AppStorage(FreeSourceTransport.gatewayKey) private var savedURL = ""
+    @AppStorage(FreeSourceTransport.gatewayKey) private var savedURL = FreeSourceTransport.defaultGateway
     @State private var enteredURL = ""
     @State private var message: String?
     var body: some View {
         Form {
             Section("مصادر البيانات") {
-                Text("التطبيق متصل مباشرة بالمصادر المجانية. يمكنك إضافة خادم Cloudflare الخاص بك بعد نشره، وسيعود التطبيق للاتصال المباشر إذا تعذر الوصول إليه.")
+                Text("التطبيق متصل بخادم 90+ المجاني على Cloudflare، ويعود للاتصال المباشر بالمصادر إذا تعذر الوصول إليه. يمكنك تعديل الرابط أو اختيار الاتصال المباشر.")
                 Text("المباريات والترتيب والأندية: ESPN. ملفات اللاعبين: TheSportsDB. الأخبار: RSS. التغطية محدودة وقد تتأخر التحديثات.")
             }
             Section("خادم مجاني اختياري") {
