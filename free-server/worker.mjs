@@ -31,6 +31,11 @@ export default {
     if (url.pathname === '/api/health') return json({ok:true,service:'90plus-free',version:'1.0',sources:['ESPN','TheSportsDB'],paidProviderEnabled:false});
     let upstream;
     try { upstream = upstreamFor(url); } catch (e) { return json({error:e.message}, 400); }
+    // The free directory rejects requests from some shared datacenter IPs.
+    // Let the app access its public endpoint directly, under its own free quota.
+    if (upstream.hostname === 'www.thesportsdb.com') {
+      return new Response(null, {status:307,headers:{'Location':upstream.href,'Cache-Control':'no-store','Access-Control-Allow-Origin':'*'}});
+    }
     const key = new Request(new URL('/cached/' + encodeURIComponent(upstream.href), url.origin));
     const cache = caches.default;
     const cached = await cache.match(key);
