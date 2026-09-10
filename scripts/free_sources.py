@@ -68,6 +68,14 @@ def apply_free_sources(root):
     edit('Sources/Views/RootView.swift', lambda s: s.replace('guard network.isOnline, APIFootballClient.isConfigured else', 'guard network.isOnline else'))
     # Identity-only emergency records cannot override real public-provider IDs.
     edit('Sources/Views/V2Discovery.swift', lambda s: s.replace('SearchFallbackCatalog.mergeTeams(live, query: text)', 'live').replace('SearchFallbackCatalog.mergePlayers(live, query: text)', 'live').replace('let fallback = SearchFallbackCatalog.teams(query: text)', 'let fallback: [APIPlusTeam] = []').replace('let fallback = SearchFallbackCatalog.players(query: text)', 'let fallback: [APIPlusPlayer] = []'))
+    edit('Sources/Views/V2Discovery.swift', lambda s: replace(s, '                seasonSummary\n', '''                if player.id.hasPrefix("tsdb:") {
+                    Text("إحصائيات الموسم غير متاحة ضمن مصدر اللاعبين المجاني.")
+                        .font(.subheadline).foregroundStyle(AppTheme.muted)
+                        .frame(maxWidth: .infinity, alignment: .leading).padding(16)
+                        .background(AppTheme.cardRaised, in: RoundedRectangle(cornerRadius: 20))
+                        .accessibilityIdentifier("player.summary")
+                } else { seasonSummary }
+'''))
     edit('Sources/Views/PremiumGlobalSearch.swift', lambda s: s.replace('لاعب • نادي • بطولة • مباراة • خبر', 'الأندية: ESPN • اللاعبون: TheSportsDB • نتائج محدودة'))
     def more(s):
         s = s.replace('health?.ok == true && health?.providerConfigured != false && !healthError', '!healthError')
@@ -84,4 +92,3 @@ def apply_free_sources(root):
     edit('UITests/ArabicJourneyTests.swift', lambda s: s.replace('search.team.2938', 'search.team.espn:ksa.1:team:2276').replace('search.player.874', 'search.player.tsdb:34146304'))
 
 if __name__ == '__main__': apply_free_sources(Path(__file__).resolve().parents[1])
-
