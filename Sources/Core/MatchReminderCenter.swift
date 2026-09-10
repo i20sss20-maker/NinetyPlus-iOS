@@ -26,8 +26,11 @@ import UserNotifications
         do {
             let granted = try await center.requestAuthorization(options: [.alert, .sound, .badge])
             guard granted else { message = "التنبيهات غير مسموحة لهذا التطبيق من إعدادات iOS."; return }
-            let calendar = SportsDisplayDate.calendar
-            let components = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: fire)
+            // Authorization may remain open until after the requested fire time.
+            guard let components = MatchReminderSchedule.components(kickoff: kickoff, minutesBefore: minutesBefore) else {
+                message = "موعد هذا التذكير مضى. اختر وقتًا آخر."
+                return
+            }
             let content = UNMutableNotificationContent()
             content.title = "مباراة بعد \(minutesBefore) دقيقة"
             content.body = "\(SportsArabic.team(match.home)) × \(SportsArabic.team(match.away))"

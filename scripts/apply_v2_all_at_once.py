@@ -1,11 +1,12 @@
 from pathlib import Path
 import subprocess
+import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 def read(path): return (ROOT / path).read_text(encoding='utf-8')
 def write(path, text): (ROOT / path).write_text(text, encoding='utf-8')
 
-subprocess.run(['python3', str(ROOT / 'scripts/apply_deep_football_ux.py')], check=True)
+subprocess.run([sys.executable, str(ROOT / 'scripts/apply_deep_football_ux.py')], check=True)
 
 p = 'Sources/Core/SportsCopy.swift'
 s = read(p)

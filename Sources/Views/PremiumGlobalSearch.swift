@@ -7,11 +7,17 @@ import UIKit
     @Published var retry = 0
 
     func search(_ raw: String) async {
+        guard !Task.isCancelled else { return }
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard text.count >= 2 else { teams = PageResource(); players = PageResource(); return }
+        // Invalidate the previous query before debouncing, so its results cannot
+        // appear beneath the new query even if the provider ignores cancellation.
+        let teamToken = teams.begin(key: text)
+        let playerToken = players.begin(key: text)
+        defer { teams.cancel(token: teamToken); players.cancel(token: playerToken) }
         do { try await Task.sleep(for: .milliseconds(320)); try Task.checkCancellation() } catch { return }
-        async let a: Void = loadTeams(text)
-        async let b: Void = loadPlayers(text)
+        async let a: Void = loadTeams(text, token: teamToken)
+        async let b: Void = loadPlayers(text, token: playerToken)
         _ = await (a, b)
     }
     func cancel() { teams.invalidate(); players.invalidate() }
@@ -19,15 +25,13 @@ import UIKit
         let key = text.replacingOccurrences(of: "أ", with: "ا").replacingOccurrences(of: "إ", with: "ا").replacingOccurrences(of: "آ", with: "ا")
         return ["الاتحاد":"Ittihad", "الهلال":"Hilal", "النصر":"Nassr", "الاهلي":"Ahli", "رونالدو":"Ronaldo", "ميسي":"Messi", "نيمار":"Neymar"][key] ?? text
     }
-    private func loadTeams(_ text: String) async {
-        let token = teams.begin(key: text); defer { teams.cancel(token: token) }
+    private func loadTeams(_ text: String, token: UUID) async {
         do {
             let values = try await APISportsStore.shared.searchTeams(provider(text)); try Task.checkCancellation()
             teams.succeed(values, token: token)
         } catch { if !Task.isCancelled && !(error is CancellationError) { teams.fail(error.localizedDescription, token: token) } }
     }
-    private func loadPlayers(_ text: String) async {
-        let token = players.begin(key: text); defer { players.cancel(token: token) }
+    private func loadPlayers(_ text: String, token: UUID) async {
         do {
             let values = try await APISportsStore.shared.searchPlayers(provider(text)); try Task.checkCancellation()
             players.succeed(values, token: token)
@@ -52,9 +56,28 @@ struct PremiumGlobalSearch: View {
     }
     private var articles: [PremiumArticle] {
         guard entered.count >= 2 else { return [] }
-        return (editorial.news + editorial.transfers).compactMap(\.premiumArticle).filter { $0.title.localizedCaseInsensitiveContains(entered) }.prefix(20).map { $0 }
+        var seen = Set<String>()
+        return (editorial.news + editorial.transfers).compactMap(\.premiumArticle)
+            .filter { $0.title.localizedCaseInsensitiveContains(entered) && seen.insert($0.id).inserted }.prefix(20).map { $0 }
     }
     private func visible(_ name: String) -> Bool { scope == "الكل" || scope == name }
+    private var loading: Bool {
+        (visible("الأندية") && store.teams.isLoading) || (visible("اللاعبون") && store.players.isLoading)
+    }
+    private var searchError: String? {
+        (visible("الأندية") ? store.teams.errorMessage : nil) ?? (visible("اللاعبون") ? store.players.errorMessage : nil)
+    }
+    private var hasResults: Bool {
+        (visible("الأندية") && !(store.teams.value ?? []).isEmpty)
+        || (visible("اللاعبون") && !(store.players.value ?? []).isEmpty)
+        || (visible("البطولات") && !leagues.isEmpty)
+        || (visible("المباريات") && !matches.isEmpty)
+        || (visible("الأخبار") && !articles.isEmpty)
+    }
+    private var searchFinished: Bool {
+        (!visible("الأندية") || (store.teams.key == entered && store.teams.value != nil))
+        && (!visible("اللاعبون") || (store.players.key == entered && store.players.value != nil))
+    }
 
     var body: some View {
         ScrollView {
@@ -67,10 +90,15 @@ struct PremiumGlobalSearch: View {
                 if entered.count < 2 {
                     ContentUnavailableView("ابدأ بحرفين على الأقل", systemImage: "magnifyingglass", description: Text("البحث في الأندية واللاعبين يحتاج اتصالًا؛ المباريات المحفوظة والأخبار المستلمة يمكن العثور عليها من النسخة المحلية."))
                 } else {
-                    PageLoadFeedback(loading: store.teams.isLoading || store.players.isLoading,
-                                     hasValue: store.teams.value != nil || store.players.value != nil,
-                                     message: store.teams.errorMessage ?? store.players.errorMessage,
+                    PageLoadFeedback(loading: loading,
+                                     hasValue: hasResults,
+                                     message: searchError,
                                      updatedAt: nil) { store.retry += 1 }
+                    if searchFinished && !loading && searchError == nil && !hasResults {
+                        ContentUnavailableView("لا توجد نتائج", systemImage: "magnifyingglass",
+                                               description: Text("جرّب اسمًا آخر أو اختر نوعًا مختلفًا من النتائج. البحث المحلي يشمل البيانات التي استلمها التطبيق فقط."))
+                            .accessibilityIdentifier("premium.search.empty")
+                    }
                     if visible("الأندية") { teamSection }
                     if visible("اللاعبون") { playerSection }
                     if visible("البطولات") { leagueSection }
